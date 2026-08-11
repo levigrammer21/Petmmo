@@ -1,0 +1,25 @@
+{
+  "name": "pet-idle-mmo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "functions.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test engine.test.js",
+    "firebase:login": "firebase login",
+    "emulators": "firebase emulators:start",
+    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:backend": "firebase deploy --only functions,firestore:rules,firestore:indexes,storage"
+  },
+  "dependencies": {
+    "firebase-admin": "14.2.0",
+    "firebase-functions": "7.3.2"
+  },
+  "devDependencies": {
+    "firebase-tools": "15.26.0"
+  }
+}

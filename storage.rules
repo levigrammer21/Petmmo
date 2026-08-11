@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Pet art ships from GitHub Pages. Firebase Storage is intentionally closed
+    // until the game has a specific, validated upload feature.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "marketListings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "speciesId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "marketListings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sellerUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

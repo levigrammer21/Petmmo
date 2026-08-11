@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#263f35" />
+    <meta name="description" content="A pet-driven idle MMO about gathering, cooking, combat, capturing, dungeons, construction, and trade." />
+    <title>Pet Idle MMO</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <noscript>This game requires JavaScript.</noscript>
+
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <section id="auth-view" class="auth-view" aria-labelledby="auth-title">
+      <div class="auth-art" aria-hidden="true">
+        <div class="auth-glow"></div>
+        <img src="pets/ash-raccoon.png" alt="" />
+      </div>
+      <div class="auth-panel">
+        <div class="brand-lockup">
+          <span class="brand-mark">PI</span>
+          <div>
+            <p class="eyebrow">A private idle world</p>
+            <h1 id="auth-title">Pet Idle MMO</h1>
+          </div>
+        </div>
+        <p class="auth-copy">Raise a working den, prepare meals, hunt wild pets, build permanent facilities, and send specialized teams into asynchronous dungeons.</p>
+
+        <form id="auth-form" class="auth-form">
+          <label id="name-field">
+            <span>Keeper name</span>
+            <input id="display-name" autocomplete="nickname" maxlength="28" placeholder="Your keeper name" />
+          </label>
+          <label>
+            <span>Email</span>
+            <input id="email" type="email" autocomplete="email" required placeholder="you@example.com" />
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="password" type="password" autocomplete="current-password" minlength="6" required placeholder="At least 6 characters" />
+          </label>
+          <div class="auth-actions">
+            <button id="email-signin" class="button primary" type="submit">Sign in</button>
+            <button id="email-register" class="button secondary" type="button">Create account</button>
+          </div>
+          <button id="google-signin" class="button google" type="button"><span class="google-g">G</span> Continue with Google</button>
+          <button id="reset-password" class="text-button" type="button">Send password reset</button>
+        </form>
+
+        <div class="auth-divider"><span>development access</span></div>
+        <button id="demo-mode" class="button ghost wide" type="button">Open local test den</button>
+        <p class="fine-print">Local test mode stays on this device and is not part of the shared MMO world.</p>
+        <p class="version-label">Version <span data-version></span></p>
+      </div>
+    </section>
+
+    <div id="game-view" class="game-view" hidden>
+      <header class="topbar">
+        <button id="mobile-menu" class="icon-button mobile-only" type="button" aria-label="Open navigation">Menu</button>
+        <div class="top-brand">
+          <span class="brand-mark small">PI</span>
+          <div>
+            <strong>Pet Idle MMO</strong>
+            <span>v<span data-version></span></span>
+          </div>
+        </div>
+        <div class="top-resources" id="top-resources"></div>
+        <div class="account-box">
+          <div>
+            <strong id="keeper-name">Keeper</strong>
+            <span id="connection-state">Local test den</span>
+          </div>
+          <button id="account-action" class="button compact ghost" type="button">Exit</button>
+        </div>
+      </header>
+
+      <aside id="sidebar" class="sidebar" aria-label="Game navigation">
+        <nav id="main-nav">
+          <button class="nav-button active" data-panel="overview" type="button"><span>OV</span> Overview</button>
+          <button class="nav-button" data-panel="activities" type="button"><span>AC</span> Activities</button>
+          <button class="nav-button" data-panel="combat" type="button"><span>CB</span> Combat</button>
+          <button class="nav-button" data-panel="den" type="button"><span>DN</span> Pet Den</button>
+          <button class="nav-button" data-panel="kitchen" type="button"><span>KC</span> Kitchen & Craft</button>
+          <button class="nav-button" data-panel="processing" type="button"><span>PR</span> Processing</button>
+          <button class="nav-button" data-panel="construction" type="button"><span>CT</span> Construction</button>
+          <button class="nav-button" data-panel="dungeons" type="button"><span>DG</span> Dungeons</button>
+          <button class="nav-button" data-panel="market" type="button"><span>MK</span> Marketplace</button>
+          <button class="nav-button" data-panel="collection" type="button"><span>CL</span> Collection</button>
+        </nav>
+        <div class="sidebar-foot">
+          <p>Active pets</p>
+          <strong id="active-count">0 / 6</strong>
+          <div class="meter"><span id="active-meter"></span></div>
+        </div>
+      </aside>
+
+      <main id="panel" class="panel" tabindex="-1"></main>
+
+      <aside class="status-rail" aria-label="Current status">
+        <section class="rail-card" id="assignment-rail"></section>
+        <section class="rail-card" id="capacity-rail"></section>
+        <section class="rail-card journal-card">
+          <div class="section-heading compact-heading">
+            <div><p class="eyebrow">Recent events</p><h2>Journal</h2></div>
+          </div>
+          <div id="journal-list" class="journal-list"></div>
+        </section>
+      </aside>
+    </div>
+
+    <dialog id="game-modal" class="game-modal">
+      <button id="modal-close" class="modal-close" type="button" aria-label="Close dialog">Close</button>
+      <div id="modal-content"></div>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function owns(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // The browser may read its own complete game save, but it may never write
+    // XP, pets, inventory, currency, assignments, or dungeon results directly.
+    // Cloud Functions uses the Admin SDK and is not restricted by these rules.
+    match /players/{uid} {
+      allow read: if owns(uid);
+      allow create, update, delete: if false;
+    }
+
+    // Signed-in players may inspect the shared family leaderboard.
+    match /leaderboards/{uid} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    // Listings are readable in the game, but every listing, purchase, return,
+    // fee, and ownership transfer must run inside a server transaction.
+    match /marketListings/{listingId} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    // Reserved for server-managed events, balance flags, and announcements.
+    match /world/{document=**} {
+      allow read: if signedIn();
+      allow create, update, delete: if false;
+    }
+
+    // Anything not explicitly listed above is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
