@@ -48,6 +48,9 @@ import {
 import { connectFirebase } from "./firebase-client.js";
 
 const LOCAL_SAVE = "pet-idle-mmo-local-v1";
+const PLACEHOLDER_ART = "pets/ash-raccoon.png";
+const previewEnabled = new URLSearchParams(window.location.search).get("preview") === "1"
+  && ["localhost", "127.0.0.1", "[::1]", "terminal.local"].includes(window.location.hostname);
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const panel = $("#panel");
@@ -66,6 +69,7 @@ let selectedCombatPets = new Set();
 let selectedDungeonPets = new Set();
 let battleTimers = [];
 let renderQueued = false;
+let authMode = "signin";
 
 const affinityColors = {
   Ember: ["#b85b38", "#f2d2bf"], Verdant: ["#668353", "#dce8cf"], Tide: ["#4c7890", "#d4e7ec"],
@@ -81,8 +85,6 @@ const formatTime = (milliseconds) => {
   const minutes = Math.floor(seconds / 60);
   return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes}m`;
 };
-const initials = (name) => name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-
 function toast(message, type = "info", detail = "") {
   const node = document.createElement("div");
   node.className = `toast ${type === "error" ? "error" : ""}`;
@@ -120,7 +122,7 @@ function queueRender() {
 function petVisual(species, extra = "") {
   const colors = affinityColors[species.affinity] || ["#777", "#ddd"];
   const style = `--affinity:${colors[0]};--affinity-soft:${colors[1]}`;
-  return `<div class="pet-visual ${extra}" style="${style}">${species.art ? `<img src="${escapeHtml(species.art)}" alt="${escapeHtml(species.name)}" />` : `<div class="pet-monogram" aria-label="Art pending for ${escapeHtml(species.name)}">${escapeHtml(initials(species.name))}</div>`}</div>`;
+  return `<div class="pet-visual ${extra}" style="${style}"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(species.name)}" /></div>`;
 }
 
 function petCard(instance, actions = true) {
@@ -145,7 +147,7 @@ function petCard(instance, actions = true) {
 function renderShell() {
   if (!gameState) return;
   $("#keeper-name").textContent = gameState.profile.displayName;
-  $("#connection-state").textContent = mode === "firebase" ? (currentUser?.emailVerified === false ? "Email verification pending" : "Shared world connected") : "Local test den";
+  $("#connection-state").textContent = mode === "firebase" ? (currentUser?.emailVerified === false ? "Email verification pending" : "Shared world connected") : "Private preview";
   $("#account-action").textContent = mode === "firebase" ? "Sign out" : "Exit";
   const active = activePetCount(gameState);
   $("#active-count").textContent = `${active} / ${MAX_ACTIVE_PETS}`;
@@ -332,7 +334,7 @@ function combatStageMarkup(battle) {
   const fighter = (entry, enemy = false) => {
     const species = SPECIES_BY_ID[entry.speciesId];
     const attackTime = Math.max(420, Number(entry.attackInterval || 2200) * playbackScale);
-    return `<div class="fighter ${enemy ? "enemy" : ""}" id="fighter-${entry.id}" style="--attack-time:${attackTime}ms">${species.art ? `<img src="${species.art}" alt="${escapeHtml(entry.name)}" />` : `<div class="pet-monogram">${escapeHtml(initials(species.name))}</div>`}<div class="health-bar"><span id="hp-${entry.id}"></span></div><div class="attack-bar"><span></span></div><span class="fighter-name">${escapeHtml(entry.name)}</span></div>`;
+    return `<div class="fighter ${enemy ? "enemy" : ""}" id="fighter-${entry.id}" style="--attack-time:${attackTime}ms"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(entry.name)}" /><div class="health-bar"><span id="hp-${entry.id}"></span></div><div class="attack-bar"><span></span></div><span class="fighter-name">${escapeHtml(entry.name)}</span></div>`;
   };
   return `<div class="combat-header"><span>${battle.victory ? "Victory recorded" : "Battle replay"}</span><span>${(battle.duration / 1000).toFixed(1)} simulated seconds</span></div><div class="combatants"><div class="team-side">${battle.team.map((entry) => fighter(entry)).join("")}</div><div class="enemy-side">${fighter(battle.enemy, true)}</div></div>`;
 }
@@ -408,11 +410,11 @@ function renderDungeons() {
 
 function renderMarket() {
   const listings = marketListings.length ? marketListings : localSeedListings();
-  panel.innerHTML = `${panelHeading("Unlimited pet trading", "Marketplace", "Pets may change hands any number of times. Sellers pay a 2% listing fee, with a minimum charge of five coins.", `<span class="tag">${mode === "firebase" ? "Live shared listings" : "Local test listings"}</span>`)}
+  panel.innerHTML = `${panelHeading("Unlimited pet trading", "Marketplace", "Pets may change hands any number of times. Sellers pay a 2% listing fee, with a minimum charge of five coins.", `<span class="tag">${mode === "firebase" ? "Live shared listings" : "Private preview listings"}</span>`)}
     <div class="market-grid">${listings.map((listing) => {
       const species = SPECIES_BY_ID[listing.speciesId || listing.pet?.speciesId];
       const own = (mode === "firebase" && currentUser && listing.sellerUid === currentUser.uid) || (mode === "local" && listing.sellerUid === "local");
-      return `<article class="market-card card">${petVisual(species)}<p class="eyebrow" style="margin-top:.8rem">${escapeHtml(species.acquisition)} · ${listing.pet?.stars || 1}★</p><h3>${escapeHtml(species.name)}</h3><p class="muted small-copy">Level ${listing.pet?.level || 1} · Seller ${escapeHtml(listing.sellerName || "Test Keeper")}</p><div class="chance-display"><span>Price</span><strong>${formatNumber(listing.price)} coins</strong></div>${own ? `<button class="button secondary wide" data-action="cancel-listing" data-id="${listing.id}" type="button">Cancel listing</button>` : `<button class="button primary wide" data-action="buy-listing" data-id="${listing.id}" type="button">Buy pet</button>`}</article>`;
+      return `<article class="market-card card">${petVisual(species)}<p class="eyebrow" style="margin-top:.8rem">${escapeHtml(species.acquisition)} · ${listing.pet?.stars || 1}★</p><h3>${escapeHtml(species.name)}</h3><p class="muted small-copy">Level ${listing.pet?.level || 1} · Seller ${escapeHtml(listing.sellerName || "Keeper")}</p><div class="chance-display"><span>Price</span><strong>${formatNumber(listing.price)} coins</strong></div>${own ? `<button class="button secondary wide" data-action="cancel-listing" data-id="${listing.id}" type="button">Cancel listing</button>` : `<button class="button primary wide" data-action="buy-listing" data-id="${listing.id}" type="button">Buy pet</button>`}</article>`;
     }).join("")}</div>`;
 }
 
@@ -430,7 +432,7 @@ function localSeedListings() {
 
 function renderCollection() {
   panel.innerHTML = `${panelHeading("Fifty launch species", "Pet Collection", `${gameState.discoveries.length} of ${PET_SPECIES.length} species discovered. All species can fight; aptitude and stat profiles determine their specialties.`)}
-    ${REGIONS.map((region) => `<section style="margin-bottom:1.4rem"><div class="section-heading compact-heading"><div><p class="eyebrow">${region.skillBand}</p><h2>${escapeHtml(region.name)}</h2></div><span class="tag">${PET_SPECIES.filter((pet) => pet.region === region.id).length} species</span></div><div class="collection-grid">${PET_SPECIES.filter((pet) => pet.region === region.id).map((species) => { const found = gameState.discoveries.includes(species.id); return `<article class="collection-card ${found ? "" : "undiscovered"}"><div class="collection-visual" style="--affinity-soft:${affinityColors[species.affinity]?.[1]}">${found && species.art ? `<img src="${species.art}" alt="${escapeHtml(species.name)}"/>` : `<div class="pet-monogram">${found ? escapeHtml(initials(species.name)) : "?"}</div>`}</div><div class="collection-copy"><h3>${found ? escapeHtml(species.name) : "Undiscovered"}</h3><p>${found ? `${species.affinity} · ${species.acquisition}` : `${region.name} species`}</p></div></article>`; }).join("")}</div></section>`).join("")}`;
+    ${REGIONS.map((region) => `<section style="margin-bottom:1.4rem"><div class="section-heading compact-heading"><div><p class="eyebrow">${region.skillBand}</p><h2>${escapeHtml(region.name)}</h2></div><span class="tag">${PET_SPECIES.filter((pet) => pet.region === region.id).length} species</span></div><div class="collection-grid">${PET_SPECIES.filter((pet) => pet.region === region.id).map((species) => { const found = gameState.discoveries.includes(species.id); const art = species.art || PLACEHOLDER_ART; return `<article class="collection-card ${found ? "" : "undiscovered"}"><div class="collection-visual" style="--affinity-soft:${affinityColors[species.affinity]?.[1]}"><img src="${escapeHtml(art)}" alt="${found ? escapeHtml(species.name) : ""}"/></div><div class="collection-copy"><h3>${found ? escapeHtml(species.name) : "Undiscovered"}</h3><p>${found ? `${species.affinity} · ${species.acquisition}` : `${region.name} species`}</p></div></article>`; }).join("")}</div></section>`).join("")}`;
 }
 
 function ownedMeals() {
@@ -534,7 +536,7 @@ async function listPetAction(petId, price) {
       const result = prepareMarketListing(gameState, { petId, price });
       setState(result.state);
       marketListings.unshift({ id: `local-own-${Date.now()}`, sellerUid: "local", sellerName: gameState.profile.displayName, speciesId: result.listing.speciesId, ...result.listing });
-      toast("Local test listing created.");
+    toast("Preview listing created.");
     }
   } catch (error) { reportError(error); }
 }
@@ -552,7 +554,7 @@ async function buyListingAction(listingId) {
     if (listing.sellerUid === "local") throw new GameError("You cannot buy your own listing.");
     setState(receiveMarketPet(gameState, listing.pet, listing.price));
     marketListings = marketListings.filter((entry) => entry.id !== listingId);
-    toast("Pet purchased in local test mode.");
+    toast("Pet purchased in the private preview.");
   } catch (error) { reportError(error); }
 }
 
@@ -580,6 +582,7 @@ async function startCombatAction() {
   if (result?.battle) {
     currentPanel = "combat";
     renderCombat(result.battle);
+    panel.scrollTop = 0;
   }
 }
 
@@ -621,9 +624,32 @@ async function initializeFirebase() {
       onError: (error) => console.warn("Firebase listener", error),
     });
   } catch (error) {
-    console.warn("Firebase unavailable; local test mode remains available.", error);
-    toast("Firebase could not connect yet.", "error", "Local test mode is still available.");
+    console.warn("Firebase unavailable.", error);
+    if (!previewEnabled) toast("The game service could not connect.", "error", "Refresh the page and try again.");
   }
+}
+
+function setAuthMode(nextMode) {
+  authMode = nextMode === "register" ? "register" : "signin";
+  $$('[data-auth-mode]').forEach((button) => {
+    const active = button.dataset.authMode === authMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  const registering = authMode === "register";
+  $("#name-field").hidden = !registering;
+  $("#display-name").required = registering;
+  $("#password").autocomplete = registering ? "new-password" : "current-password";
+  $("#email-submit").textContent = registering ? "Create your den" : "Enter your den";
+  $("#reset-password").hidden = registering;
+}
+
+function enterLocalPreview() {
+  const saved = localStorage.getItem(LOCAL_SAVE);
+  let state;
+  try { state = saved ? JSON.parse(saved) : createInitialState("Preview Keeper"); }
+  catch { state = createInitialState("Preview Keeper"); }
+  enterGame("local", settleState(state).state);
 }
 
 document.addEventListener("click", async (event) => {
@@ -661,24 +687,22 @@ $("#modal-close").addEventListener("click", () => modal.close());
 modal.addEventListener("click", (event) => { if (event.target === modal) modal.close(); });
 $("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
 $("#account-action").addEventListener("click", async () => { if (mode === "firebase") await firebase.signOut(); else leaveGame(); });
+$$("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => setAuthMode(button.dataset.authMode)));
 
 $("#auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!firebase) return toast("Firebase is still connecting. Try local test mode for now.", "error");
-  try { await firebase.signInEmail($("#email").value.trim(), $("#password").value); } catch (error) { reportError(error); }
-});
-$("#email-register").addEventListener("click", async () => {
-  if (!firebase) return toast("Firebase is still connecting.", "error");
-  try { await firebase.registerEmail($("#email").value.trim(), $("#password").value, $("#display-name").value.trim()); toast("Account created. Verification email sent."); } catch (error) { reportError(error); }
+  if (!firebase) return toast("The game service is still connecting.", "error", "Please wait a moment and try again.");
+  try {
+    if (authMode === "register") {
+      await firebase.registerEmail($("#email").value.trim(), $("#password").value, $("#display-name").value.trim());
+      toast("Account created. Verification email sent.");
+    } else {
+      await firebase.signInEmail($("#email").value.trim(), $("#password").value);
+    }
+  } catch (error) { reportError(error); }
 });
 $("#google-signin").addEventListener("click", async () => { if (!firebase) return toast("Firebase is still connecting.", "error"); try { await firebase.signInGoogle(); } catch (error) { reportError(error); } });
 $("#reset-password").addEventListener("click", async () => { const email = $("#email").value.trim(); if (!email) return toast("Enter your email first.", "error"); try { await firebase.sendPasswordReset(email); toast("Password reset email sent."); } catch (error) { reportError(error); } });
-$("#demo-mode").addEventListener("click", () => {
-  const saved = localStorage.getItem(LOCAL_SAVE);
-  let state;
-  try { state = saved ? JSON.parse(saved) : createInitialState("Local Keeper"); } catch { state = createInitialState("Local Keeper"); }
-  enterGame("local", settleState(state).state);
-});
 
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible" || !gameState) return;
@@ -706,4 +730,6 @@ setInterval(async () => {
 }, 30000);
 
 $$('[data-version]').forEach((node) => { node.textContent = GAME_VERSION; });
+setAuthMode("signin");
 initializeFirebase();
+if (previewEnabled) enterLocalPreview();

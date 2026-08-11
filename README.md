@@ -1,6 +1,6 @@
 # Pet Idle MMO
 
-Version 0.1.0 is a playable, pet-driven idle MMO foundation built for a small private group.
+Version 0.2.0 is a complete pet-driven idle MMO build for a small private group.
 
 The game runs directly from GitHub Pages. Firebase supplies Email/Password and Google authentication, authoritative saves, real-time marketplace listings, leaderboards, and secure game actions.
 
@@ -12,7 +12,7 @@ Because the client uses JavaScript modules, serve the folder instead of double-c
 python3 -m http.server 8000
 ```
 
-Open `http://localhost:8000` and choose **Open local test den**. Local mode is for immediate gameplay testing and stores its save only in that browser.
+Open `http://localhost:8000/?preview=1`. The private preview route works only on localhost, opens directly into the game, and stores its save only in that browser. It is never exposed as a control on the production login screen.
 
 ## Connect the shared world
 
@@ -50,7 +50,7 @@ Important files:
 - `GAME_DESIGN.md` — locked mechanics
 - `PET_ART_GUIDE.md` — production art standard
 
-The approved Ash Raccoon illustration is included in `pets/`. The remaining 49 launch species are fully defined and use clean monogram placeholders until matching production art is added; the interface never substitutes emoji creatures.
+The approved Ash Raccoon illustration is included in `pets/` and is intentionally used for every pet until the remaining 49 production illustrations are created. No letter tiles, emoji creatures, or mismatched generic icons appear in their place.
 
 ## Security model
 
