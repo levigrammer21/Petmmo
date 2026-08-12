@@ -1,1384 +1,185 @@
-import {
-  ACTION_TIME_SCALE,
-  ACTIVITIES,
-  BUILDINGS,
-  DUNGEONS,
-  EQUIPMENT_SLOTS,
-  GAME_NAME,
-  GAME_VERSION,
-  ITEMS,
-  MAX_ACTIVE_PETS,
-  MAX_COMBAT_PETS,
-  MAX_IDLE_HOURS,
-  PET_SPECIES,
-  RECIPES,
-  REGIONS,
-  SKILLS,
-  SPECIES_BY_ID,
-  STORE_ITEMS,
-  inventoryName,
-  levelCapForStars,
-  scaledPetStats,
-  xpForNextLevel,
-} from "./game-data.js";
-import {
-  GameError,
-  activePetCount,
-  attemptCapture,
-  buyStoreItem,
-  buildingCosts,
-  claimDungeon,
-  condensePets,
-  constructionRequirement,
-  createInitialState,
-  createPetInstance,
-  declineCapture,
-  denCapacity,
-  dungeonChance,
-  equipItem,
-  keeperStats,
-  listAreaOpponents,
-  normalizeState,
-  processingCoinReward,
-  prepareMarketListing,
-  receiveMarketPet,
-  resolveAreaCombat,
-  resolveCombat,
-  restoreCancelledListing,
-  sacrificePet,
-  settleState,
-  skillLevel,
-  startActivity,
-  startKeeperActivity,
-  startKeeperConstruction,
-  startKeeperProcessing,
-  startKeeperRecipe,
-  startConstruction,
-  startCombatPatrol,
-  startDungeon,
-  startProcessing,
-  startProcessingShift,
-  startRecipe,
-  stopActivity,
-  stopCombatPatrol,
-  stopKeeperActivity,
-  storageCapacity,
-  useHealingItem,
-} from "./game-engine.js";
-import { connectFirebase } from "./firebase-client.js";
-import { friendlyAuthError } from "./auth-errors.js";
-import { playSound, soundEnabled, toggleSound } from "./sound-manager.js";
+import { ACTIVITIES, BUILDINGS, DUNGEONS, GAME_VERSION, ITEMS, MAX_ACTIVE_PETS, MAX_COMBAT_PETS, PET_SPECIES, RECIPES, REGIONS, SKILLS, SPECIES_BY_ID, inventoryName, levelFromXp, scaledPetStats } from './game-data.js';
+import { advanceLive, assignmentName, buildUpgrade, createInitialState, denCapacity, equipItem, normalizeState, partyPowerFor, resumeCombat, settleState, skillLevel, startCombat, startDungeon, startKeeperAssignment, startPetAssignment, stopCombat, stopKeeperAssignment, stopPetAssignment, useHealingItem } from './game-engine.js';
+import { connectCloud, emailCreate, emailSignIn, googleSignIn, loadCloudState, onAuth, saveCloudState, signOutCloud } from './cloud.js';
 
-const LOCAL_SAVE = "pet-idle-mmo-local-v1";
-const COMBAT_SETUP_KEY = "wilderden-combat-setup-v2";
-const PLACEHOLDER_ART = "logo.svg";
-const previewEnabled = new URLSearchParams(window.location.search).get("preview") === "1"
-  && ["localhost", "127.0.0.1", "[::1]", "terminal.local"].includes(window.location.hostname);
-const $ = (selector, root = document) => root.querySelector(selector);
-const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const panel = $("#panel");
-const modal = $("#game-modal");
-const modalContent = $("#modal-content");
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const LOCAL_KEY='wilderden-rebuild-v1';
+const stateUi={screen:'home',skill:'woodcutting',selectedCombat:new Set(),combatKeeper:true,region:'greenhollow',cloud:false,user:null,lastRender:0};
+let state=null, saveTimer=null, cloudReady=false;
 
-let gameState = null;
-let mode = "auth";
-let firebase = null;
-let currentUser = null;
-let currentPanel = "overview";
-let currentSkill = "foraging";
-let inventoryFilter = "all";
-let marketListings = [];
-let leaderboard = [];
-let selectedCombatPets = new Set();
-let selectedCombatRegion = "greenhollow";
-let selectedDungeonPets = new Set();
-let battleTimers = [];
-let activeBattle = null;
-let combatRequestInProgress = false;
-let renderQueued = false;
-let authMode = "signin";
-let authActionInProgress = false;
-let authLoadPromise = null;
-let loadedUserId = null;
+const NAV=[['home','⌂','Home'],['skills','✦','Skills'],['combat','⚔','Combat'],['pets','🐾','Pets'],['inventory','▦','Inventory'],['dungeons','◆','Dungeons'],['upgrades','⌁','Upgrades']];
+const GATHER=['woodcutting','mining','foraging','fishing','mischief','processing','cooking','crafting'];
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>new Intl.NumberFormat('en-US',{notation:n>99999?'compact':'standard',maximumFractionDigits:1}).format(Math.floor(n||0));
+const time=ms=>{const s=Math.max(0,Math.ceil(ms/1000));return s<60?`${s}s`:`${Math.floor(s/60)}m ${s%60}s`;};
+const itemName=id=>inventoryName(id);
+function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#toast-zone').append(el);setTimeout(()=>el.remove(),3200);}
+function art(species,cls='pet-art'){return `<img class="${cls}" src="${esc(species.art)}" alt="${esc(species.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'"/><span class="art-fallback" style="display:none">🐾</span>`;}
+function skillInfo(id){const xp=state.skills?.[id]?.xp||0,l=levelFromXp(xp,'skill',100);return {...l,xp};}
+function progress(info){const pct=info.nextXp?Math.min(100,info.progressXp/info.nextXp*100):100;return `<div class="xpbar"><span style="width:${pct}%"></span></div>`;}
+function ownedHealing(){return Object.entries(state.inventory).filter(([id,q])=>q>0&&ITEMS[id]?.heal).sort((a,b)=>ITEMS[a[0]].heal-ITEMS[b[0]].heal);}
 
-const COMBAT_MIN_PLAYBACK_MS = 3500;
-const COMBAT_MAX_PLAYBACK_MS = 18000;
-const COMBAT_RESTART_DELAY_MS = 650;
-let continuousCombatEnabled = false;
-let continuousCombatRequest = null;
-let continuousCombatNextTimer = null;
-
-function readCombatSetup() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(COMBAT_SETUP_KEY) || "null");
-    return saved && typeof saved === "object" ? saved : {};
-  } catch {
-    return {};
-  }
+async function init(){
+  $('#version').textContent=`v${GAME_VERSION}`;
+  bindAuth();
+  try{
+    await connectCloud(); cloudReady=true;
+    onAuth(async user=>{if(user){stateUi.user=user;stateUi.cloud=true;const loaded=await loadCloudState();state=settleState(loaded?normalizeState(loaded,user.displayName||'Keeper'):createInitialState(user.displayName||'Keeper'));enterGame();saveSoon();}else if(!stateUi.cloud){showAuth();}});
+  }catch(e){console.warn(e);$('#auth-message').textContent='Cloud sign-in is unavailable right now. Local play still works.';}
 }
-
-function writeCombatSetup(setup) {
-  try { localStorage.setItem(COMBAT_SETUP_KEY, JSON.stringify(setup)); } catch { /* Preferences are optional. */ }
+function bindAuth(){
+  $('#google').onclick=async()=>{try{if(!cloudReady)throw Error('Firebase is still loading.');await googleSignIn();}catch(e){$('#auth-message').textContent=e.message;}};
+  $('#signin').onclick=async()=>{try{await emailSignIn($('#email').value,$('#password').value);}catch(e){$('#auth-message').textContent=e.message;}};
+  $('#create').onclick=async()=>{try{await emailCreate($('#email').value,$('#password').value);}catch(e){$('#auth-message').textContent=e.message;}};
+  $('#local').onclick=()=>{stateUi.cloud=false;stateUi.user=null;const raw=localStorage.getItem(LOCAL_KEY);state=settleState(raw?normalizeState(JSON.parse(raw),'Keeper'):createInitialState('Keeper'));enterGame();};
+  $('#menu-btn').onclick=()=>$('#sidebar').classList.toggle('open');
+  $('#account-btn').onclick=()=>openAccount();
 }
-
-const affinityColors = {
-  Ember: ["#b85b38", "#f2d2bf"], Verdant: ["#668353", "#dce8cf"], Tide: ["#4c7890", "#d4e7ec"],
-  Stone: ["#726e62", "#e2ded2"], Spark: ["#b68a35", "#f1e4b9"], Gale: ["#63898a", "#d5e8e3"],
-  Radiant: ["#b78a41", "#f1e5bf"], Umbral: ["#60536f", "#ded5e8"], Frost: ["#668ca7", "#d8e8f0"],
-};
-
-const skillColors = {
-  woodcutting: "#2f9d68", mining: "#6776ad", foraging: "#7aa443", fishing: "#338fc0", mischief: "#8c5eb5",
-  processing: "#da7657", cooking: "#e29a3f", crafting: "#6c7fbe", construction: "#a76d45",
-  combat: "#d65558", melee: "#c85f46", ranged: "#3f9d70", magic: "#7161c5", petMastery: "#d18a36",
-};
-
-const itemIconPaths = {
-  meal: `<path d="M10 27h28c-2 9-7 13-14 13S12 36 10 27Z"/><path d="M14 23c4-5 16-5 20 0M18 18c-1-4 1-7 4-10m6 10c2-4 1-7-1-10"/>`,
-  medicine: `<path d="M18 7h12v7l4 5v21H14V19l4-5V7Z"/><path d="M18 12h12M19 28h10M24 23v10"/>`,
-  weapon: `<path d="m11 39 7-7m-3-3 4 4m4-8L37 9l2 2-14 16-6 2 2-6Z"/><path d="m9 36 3 3"/>`,
-  armor: `<path d="M24 6c6 5 11 6 16 7v10c0 10-6 16-16 20C14 39 8 33 8 23V13c5-1 10-2 16-7Z"/><path d="M24 14v21M15 21h18"/>`,
-  tool: `<path d="m10 38 16-19m-5-4c5-5 12-5 17-1l-7 7-6-2-4-4Z"/><path d="m8 37 4 4"/>`,
-  ingredient: `<path d="M38 10C22 10 12 20 12 34c13 1 25-7 26-24Z"/><path d="M10 40c7-10 13-15 23-23"/>`,
-  material: `<path d="m24 7 15 11-6 20H15L9 18 24 7Z"/><path d="m9 18 15 7 15-7M24 7v18m0 0 9 13m-9-13-9 13"/>`,
-  supply: `<path d="M14 17h20l4 24H10l4-24Z"/><path d="M18 17v-4c0-4 3-7 6-7s6 3 6 7v4M10 27h28"/>`,
-  item: `<path d="m9 17 15-9 15 9v20l-15 7-15-7V17Z"/><path d="m9 17 15 8 15-8M24 25v19"/>`,
-};
-
-function itemIconMarkup(item) {
-  const category = item?.category || "item";
-  const paths = itemIconPaths[category] || itemIconPaths.item;
-  return `<svg class="item-icon" viewBox="0 0 48 48" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+function showAuth(){$('#auth').classList.remove('hidden');$('#game').classList.add('hidden');}
+function enterGame(){
+  $('#auth').classList.add('hidden');$('#game').classList.remove('hidden');
+  if(state.combat?.petIds)state.combat.petIds.forEach(id=>stateUi.selectedCombat.add(id));
+  renderNav();render();
 }
-
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
-const formatNumber = (value) => new Intl.NumberFormat("en-US", { notation: Number(value) >= 100000 ? "compact" : "standard", maximumFractionDigits: 1 }).format(Number(value || 0));
-const formatTime = (milliseconds) => {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-};
-function toast(message, type = "info", detail = "") {
-  if (type === "error") playSound("error");
-  const node = document.createElement("div");
-  node.className = `toast ${type === "error" ? "error" : ""}`;
-  node.innerHTML = `${escapeHtml(message)}${detail ? `<small>${escapeHtml(detail)}</small>` : ""}`;
-  $("#toast-region").append(node);
-  setTimeout(() => node.remove(), 4200);
+function saveSoon(){
+  localStorage.setItem(LOCAL_KEY,JSON.stringify(state));
+  clearTimeout(saveTimer);saveTimer=setTimeout(async()=>{if(stateUi.cloud&&stateUi.user){try{state.lastSavedAt=Date.now();await saveCloudState(state);}catch(e){console.warn(e);}}},800);
 }
-
-function reportError(error) {
-  console.error(error);
-  const [message, detail] = friendlyAuthError(error);
-  toast(message, "error", detail);
+function setState(next,msg=''){state=next;saveSoon();render();if(msg)toast(msg);}
+function renderNav(){
+  const markup=NAV.map(([id,ico,label])=>`<button data-nav="${id}" class="nav-item ${stateUi.screen===id?'active':''}"><span>${ico}</span><b>${label}</b></button>`).join('');
+  $('#sidebar').innerHTML=`<div class="side-head"><small>KEEPER</small><strong>${esc(state.profile.displayName)}</strong></div>${markup}<div class="side-foot">Idle progress caps at 24 hours.<br/>No work-session timers.</div>`;
+  $('#bottom-nav').innerHTML=NAV.slice(0,5).map(([id,ico,label])=>`<button data-nav="${id}" class="${stateUi.screen===id?'active':''}"><span>${ico}</span><small>${label}</small></button>`).join('');
+  $$('[data-nav]').forEach(b=>b.onclick=()=>{stateUi.screen=b.dataset.nav;$('#sidebar').classList.remove('open');renderNav();render();});
 }
-
-function saveLocal() {
-  if (mode === "local" && gameState) localStorage.setItem(LOCAL_SAVE, JSON.stringify(gameState));
+function render(){
+  if(!state)return;const now=Date.now();state=settleState(state,now);
+  $('#coins').textContent=fmt(state.profile.coins);$('#keeper-hp').textContent=`${Math.ceil(state.profile.currentHp)}/${state.profile.maxHp}`;$('#pet-count').textContent=`${state.pets.length}/${denCapacity(state)}`;
+  const main=$('#main');
+  if(stateUi.screen==='home')main.innerHTML=renderHome();
+  else if(stateUi.screen==='skills')main.innerHTML=renderSkills();
+  else if(stateUi.screen==='combat')main.innerHTML=renderCombat();
+  else if(stateUi.screen==='pets')main.innerHTML=renderPets();
+  else if(stateUi.screen==='inventory')main.innerHTML=renderInventory();
+  else if(stateUi.screen==='dungeons')main.innerHTML=renderDungeons();
+  else if(stateUi.screen==='upgrades')main.innerHTML=renderUpgrades();
+  bindScreen();stateUi.lastRender=now;
 }
-
-function setState(next, shouldRender = true) {
-  gameState = normalizeState(next, currentUser?.displayName || "Keeper");
-  if (!activeBattle && gameState.combatPreferences?.regionId) selectedCombatRegion = gameState.combatPreferences.regionId;
-  saveLocal();
-  if (shouldRender) queueRender();
-}
-
-function queueRender() {
-  if (renderQueued || !gameState) return;
-  renderQueued = true;
-  requestAnimationFrame(() => {
-    renderQueued = false;
-    renderShell();
-    renderPanel();
-  });
-}
-
-function petVisual(species, extra = "") {
-  const colors = affinityColors[species.affinity] || ["#777", "#ddd"];
-  const style = `--affinity:${colors[0]};--affinity-soft:${colors[1]}`;
-  return `<div class="pet-visual ${extra}" style="${style}"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(species.name)}" loading="lazy" decoding="async" /></div>`;
-}
-
-function petIsInLiveBattle(petId) {
-  return Boolean(activeBattle?.battle.team.some((entry) => entry.id === petId));
-}
-
-function petCard(instance, actions = true) {
-  const species = SPECIES_BY_ID[instance.speciesId];
-  const stats = scaledPetStats(instance);
-  const needed = instance.level >= levelCapForStars(instance.stars) ? 0 : xpForNextLevel(instance.level, "pet");
-  const progress = needed ? Math.min(100, (instance.xp / needed) * 100) : 100;
-  const status = Number(instance.currentHp || 0) <= 0 ? "Downed" : petIsInLiveBattle(instance.id) ? "Fighting" : instance.status === "idle" ? "Idle" : String(instance.status).split(":")[0];
-  const aptitudes = Object.entries(species.aptitudes).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  return `<article class="pet-card" data-pet-id="${instance.id}">
-    <div class="pet-status">${escapeHtml(status)}</div>
-    ${petVisual(species)}
-    <div class="pet-body">
-      <div class="pet-title-row"><div><h3>${escapeHtml(instance.customName || species.name)}</h3><p>${escapeHtml(species.affinity)} · Power ${formatNumber(stats.power)} · HP ${instance.currentHp}/${stats.hp}</p></div><span class="star-row">${instance.stars}/5 stars</span></div>
-      <div class="aptitude-row">${aptitudes.map(([skill, rating]) => `<span class="tag">${escapeHtml(skill)} ${rating}</span>`).join("")}</div>
-      <div class="xp-line"><div class="labels"><span>Level ${instance.level}/${levelCapForStars(instance.stars)}</span><span>${needed ? `${formatNumber(instance.xp)}/${formatNumber(needed)} XP` : "Ready to Condense"}</span></div><div class="xp-bar"><span style="width:${progress}%"></span></div></div>
-      ${actions ? `<div class="pet-actions"><button class="button small ghost" data-action="pet-details" data-pet-id="${instance.id}" type="button">Details</button>${Number(instance.currentHp || 0) <= 0 ? `<button class="button small primary" data-action="heal-pet" data-pet-id="${instance.id}" type="button">Heal</button>` : `<button class="button small ghost" data-action="pet-manage" data-pet-id="${instance.id}" type="button">Manage</button>`}</div>` : ""}
-    </div>
-  </article>`;
-}
-
-function renderShell() {
-  if (!gameState) return;
-  $("#keeper-name").textContent = gameState.profile.displayName;
-  $("#account-action").textContent = mode === "firebase" ? "Sign out" : "Exit";
-  const combatActive = activeBattle?.battle.team.filter((entry) => entry.kind === "pet").length || 0;
-  const active = Math.min(MAX_ACTIVE_PETS, activePetCount(gameState) + combatActive);
-  const keeper = keeperStats(gameState);
-  $("#active-count").textContent = `${active} / ${MAX_ACTIVE_PETS}`;
-  $("#active-meter").style.width = `${active / MAX_ACTIVE_PETS * 100}%`;
-  $("#top-resources").innerHTML = [
-    ["Coins", gameState.profile.coins], ["HP", `${gameState.profile.currentHp}/${keeper.maxHp}`], ["Pets", `${active}/${MAX_ACTIVE_PETS}`], ["Storage", `${inventoryStackCount()}/${storageCapacity(gameState)}`],
-  ].map(([label, value]) => `<div class="resource-pill"><span>${label}</span><strong>${typeof value === "string" ? escapeHtml(value) : formatNumber(value)}</strong></div>`).join("");
-
-  $("#assignment-rail").innerHTML = `<div class="section-heading compact-heading"><div><p class="eyebrow">Working now</p><h2>Assignments</h2></div><strong>${active}/${MAX_ACTIVE_PETS}</strong></div>${assignmentRail()}`;
-  $("#capacity-rail").innerHTML = `<div class="section-heading compact-heading"><div><p class="eyebrow">Facilities</p><h2>Capacity</h2></div></div>
-    <div class="assignment"><div class="assignment-head"><strong>Den</strong><small>${gameState.pets.length}/${denCapacity(gameState)}</small></div><div class="progress"><span style="width:${Math.min(100, gameState.pets.length / denCapacity(gameState) * 100)}%"></span></div></div>
-    <div class="assignment"><div class="assignment-head"><strong>Storage</strong><small>${inventoryStackCount()}/${storageCapacity(gameState)}</small></div><div class="progress"><span style="width:${Math.min(100, inventoryStackCount() / storageCapacity(gameState) * 100)}%"></span></div></div>`;
-  $("#journal-list").innerHTML = [...gameState.journal].reverse().slice(0, 8).map((entry) => `<div class="journal-entry">${escapeHtml(entry.text)}<time>${new Date(entry.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time></div>`).join("") || `<div class="muted small-copy">No events yet.</div>`;
-}
-
-function mealCount() {
-  return Object.entries(gameState.inventory).filter(([id]) => ITEMS[id]?.category === "meal").reduce((sum, [, quantity]) => sum + Number(quantity), 0);
-}
-
-function inventoryStackCount() {
-  return Object.values(gameState.inventory).filter((quantity) => Number(quantity) > 0).length;
-}
-
-function assignmentTiming(assignment, now = Date.now()) {
-  if (["activity", "keeper", "processing-shift"].includes(assignment.kind)) {
-    const duration = Math.max(1, Number(assignment.durationMs || 1));
-    const plannedEndAt = Number(assignment.plannedEndAt || Number(assignment.startedAt || now) + MAX_IDLE_HOURS * 60 * 60 * 1000);
-    const effectiveNow = Math.min(now, plannedEndAt);
-    const elapsed = Math.max(0, effectiveNow - Number(assignment.lastAt || assignment.startedAt || now));
-    const cycleElapsed = elapsed % duration;
-    const sessionRemaining = Math.max(0, plannedEndAt - now);
-    return {
-      progress: Math.min(100, cycleElapsed / duration * 100),
-      remaining: Math.max(0, duration - cycleElapsed),
-      sessionRemaining,
-      overallProgress: Math.min(100, Math.max(0, (now - Number(assignment.startedAt || now)) / Math.max(1, plannedEndAt - Number(assignment.startedAt || now)) * 100)),
-      label: sessionRemaining ? `${formatTime(sessionRemaining)} left` : "Session complete",
-      cycleLabel: `${formatTime(Math.max(0, duration - cycleElapsed))} to reward`,
-    };
-  }
-  const startedAt = Number(assignment.startedAt || now);
-  const endAt = Number(assignment.endAt || startedAt);
-  const total = Math.max(1, endAt - startedAt);
-  const remaining = Math.max(0, endAt - now);
-  return {
-    progress: Math.min(100, Math.max(0, (now - startedAt) / total * 100)),
-    remaining,
-    label: remaining ? `${formatTime(remaining)} remaining` : "Completing…",
-    cycleLabel: "One-time assignment",
-  };
-}
-
-function keeperDisplayDuration(task) {
-  const tool = ITEMS[gameState.equipment?.tool];
-  const toolBonus = tool?.skill === task.skill ? Number(tool.speedBonus || 0) : 0;
-  return Math.max(5000, Math.round(Number(task.duration || 5) * 1000 * ACTION_TIME_SCALE * (1 - toolBonus)));
-}
-
-function assignmentProgress(assignment) {
-  return assignmentTiming(assignment).progress;
-}
-
-function assignmentLabel(assignment) {
-  if (["activity", "keeper"].includes(assignment.kind)) return ACTIVITIES.find((entry) => entry.id === assignment.taskId)?.name || "Activity";
-  if (assignment.kind === "processing-shift") return "Process remains queue";
-  if (["recipe", "keeper-recipe"].includes(assignment.kind)) return RECIPES.find((entry) => entry.id === assignment.taskId)?.name || "Recipe";
-  if (["construction", "keeper-construction"].includes(assignment.kind)) return BUILDINGS.find((entry) => entry.id === assignment.taskId)?.name || "Construction";
-  if (["processing", "keeper-processing"].includes(assignment.kind)) return `Process ${SPECIES_BY_ID[assignment.taskId]?.name || "pet"}`;
-  return "Assignment";
-}
-
-function assignmentSkillId(assignment) {
-  if (["activity", "keeper"].includes(assignment.kind)) return ACTIVITIES.find((entry) => entry.id === assignment.taskId)?.skill || "petMastery";
-  if (assignment.kind === "processing-shift") return "processing";
-  if (["recipe", "keeper-recipe"].includes(assignment.kind)) return RECIPES.find((entry) => entry.id === assignment.taskId)?.skill || "crafting";
-  if (["construction", "keeper-construction"].includes(assignment.kind)) return "construction";
-  if (["processing", "keeper-processing"].includes(assignment.kind)) return "processing";
-  return "petMastery";
-}
-
-function skillProgressMarkup(skillId, compact = false) {
-  const skill = SKILLS.find((entry) => entry.id === skillId);
-  const progress = gameState.skills?.[skillId] || { level: 1, xp: 0 };
-  const level = Number(progress.level || 1);
-  const needed = level >= 100 ? 0 : xpForNextLevel(level, "skill");
-  const percent = needed ? Math.min(100, Number(progress.xp || 0) / needed * 100) : 100;
-  const remaining = Math.max(0, needed - Number(progress.xp || 0));
-  const related = ACTIVITIES.filter((entry) => entry.skill === skillId && entry.level > level).sort((a, b) => a.level - b.level)[0];
-  return `<div class="skill-progress skill-rpg ${compact ? "compact" : ""}" data-skill-widget="${skillId}" style="--skill-color:${skillColors[skillId] || "#418777"}">
-    <div class="skill-level-medallion"><span>LV</span><strong data-skill-level>${level}</strong></div>
-    <div class="skill-progress-main">
-      <div class="skill-progress-head"><span>${escapeHtml(skill?.name || skillId)}</span><strong data-skill-to-go>${needed ? `${formatNumber(remaining)} XP to Lv ${level + 1}` : "Mastered"}</strong></div>
-      <div class="level-progress"><span data-skill-xp-meter style="width:${percent}%"></span></div>
-      <div class="skill-progress-foot"><span data-skill-xp-text>${needed ? `${formatNumber(progress.xp)} / ${formatNumber(needed)} XP` : "Maximum level"}</span>${related && !compact ? `<span>Next unlock: ${escapeHtml(related.name)} · Lv ${related.level}</span>` : `<span>${escapeHtml(skill?.description || "")}</span>`}</div>
-    </div>
-  </div>`;
-}
-
-function liveAssignmentsBoard(title = "Live work queue", filter = () => true) {
-  const assignments = [...(gameState.keeperActivity ? [gameState.keeperActivity] : []), ...gameState.activities].filter(filter);
-  const petAssignments = assignments.filter((assignment) => !assignment.kind.startsWith("keeper")).length;
-  const keeperWorking = assignments.some((assignment) => assignment.kind.startsWith("keeper"));
-  return `<section class="live-work card card-pad">
-    <div class="section-heading compact-heading"><div><p class="eyebrow">Timers running now</p><h2>${escapeHtml(title)}</h2></div><span class="live-count"><i></i>${petAssignments} pet${petAssignments === 1 ? "" : "s"}${keeperWorking ? " + Keeper" : ""}</span></div>
-    ${assignments.length ? `<div class="live-work-grid">${assignments.map((assignment) => {
-      const keeperJob = assignment.kind.startsWith("keeper");
-      const pet = gameState.pets.find((entry) => entry.id === assignment.petId);
-      const species = pet ? SPECIES_BY_ID[pet.speciesId] : null;
-      const timing = assignmentTiming(assignment);
-      const skillId = assignmentSkillId(assignment);
-      const skill = SKILLS.find((entry) => entry.id === skillId);
-      const completed = Number(assignment.completedActions || 0);
-      return `<article class="live-job" data-live-assignment="${assignment.id}">
-        ${keeperJob ? `<div class="keeper-job-avatar">K</div>` : `<img src="${escapeHtml(species?.art || PLACEHOLDER_ART)}" alt="" loading="lazy" decoding="async" />`}
-        <div class="live-job-main">
-          <div class="live-job-title"><div><strong>${escapeHtml(assignmentLabel(assignment))}</strong><span>${keeperJob ? "Keeper" : escapeHtml(pet?.customName || species?.name || "Pet")} · ${escapeHtml(skill?.name || "Pet Mastery")} Lv ${skillLevel(gameState, skillId)}</span></div><b data-assignment-time>${escapeHtml(timing.label)}</b></div>
-          <div class="job-progress"><span data-assignment-progress style="width:${timing.progress}%"></span><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div>
-          <div class="live-job-foot"><span data-assignment-cycle>${["activity", "keeper", "processing-shift"].includes(assignment.kind) ? `${completed} actions · ${timing.cycleLabel}` : "One-time assignment"}</span><button class="text-button" data-action="${keeperJob ? "stop-keeper-assignment" : "stop-assignment"}" data-id="${assignment.id}" type="button">Stop</button></div>
-        </div>
-      </article>`;
-    }).join("")}</div>` : `<div class="empty-state compact-empty"><strong>No timers are running.</strong><span>Assign your Keeper or a pet and its countdown will appear here.</span></div>`}
-  </section>`;
-}
-
-function assignmentRail() {
-  const patrol = gameState.combatPatrol;
-  if (!gameState.activities.length && !patrol) return `<div class="empty-state small-copy">No pets are assigned.</div>`;
-  const patrolMarkup = patrol ? `<div class="assignment patrol-rail" data-live-patrol="${patrol.id}"><div class="assignment-head"><strong>Combat patrol</strong><small data-patrol-time>${formatTime(patrol.endAt - Date.now())} left</small></div><small>${escapeHtml(REGIONS.find((region) => region.id === patrol.regionId)?.name || patrol.regionId)} · ${patrol.petIds.length} pets</small><div class="progress"><span data-patrol-progress style="width:${Math.min(100, (Date.now() - patrol.startedAt) / Math.max(1, patrol.endAt - patrol.startedAt) * 100)}%"></span></div></div>` : "";
-  return `<div class="assignment-list">${patrolMarkup}${gameState.activities.slice(0, 6).map((assignment) => {
-    const pet = gameState.pets.find((entry) => entry.id === assignment.petId);
-    const timing = assignmentTiming(assignment);
-    return `<div class="assignment" data-live-assignment="${assignment.id}"><div class="assignment-head"><strong>${escapeHtml(pet ? SPECIES_BY_ID[pet.speciesId].name : "Pet")}</strong><small data-assignment-time>${escapeHtml(timing.label)}</small></div><small>${escapeHtml(assignmentLabel(assignment))}</small><div class="progress"><span data-assignment-progress style="width:${timing.progress}%"></span></div><button class="text-button" data-action="stop-assignment" data-id="${assignment.id}" type="button">Stop</button></div>`;
-  }).join("")}</div>`;
-}
-
-function updateLiveProgress() {
-  if (!gameState) return;
-  for (const assignment of [...(gameState.keeperActivity ? [gameState.keeperActivity] : []), ...gameState.activities]) {
-    const timing = assignmentTiming(assignment);
-    document.querySelectorAll(`[data-live-assignment="${CSS.escape(assignment.id)}"]`).forEach((node) => {
-      const meter = node.querySelector("[data-assignment-progress]");
-      const time = node.querySelector("[data-assignment-time]");
-      const cycle = node.querySelector("[data-assignment-cycle]");
-      if (meter) meter.style.width = `${timing.progress}%`;
-      if (time) time.textContent = timing.label;
-      if (cycle && ["activity", "keeper", "processing-shift"].includes(assignment.kind)) cycle.textContent = `${Number(assignment.completedActions || 0)} actions · ${timing.cycleLabel}`;
-    });
-  }
-  if (gameState.combatPatrol) {
-    const run = gameState.combatPatrol;
-    document.querySelectorAll(`[data-live-patrol="${CSS.escape(run.id)}"]`).forEach((node) => {
-      const time = node.querySelector("[data-patrol-time]");
-      const meter = node.querySelector("[data-patrol-progress]");
-      if (time) time.textContent = `${formatTime(Math.max(0, run.endAt - Date.now()))} left`;
-      if (meter) meter.style.width = `${Math.min(100, Math.max(0, (Date.now() - run.startedAt) / Math.max(1, run.endAt - run.startedAt) * 100))}%`;
-    });
-  }
-  for (const run of gameState.dungeonRuns) {
-    const node = document.querySelector(`[data-live-dungeon="${CSS.escape(run.id)}"]`);
-    if (!node) continue;
-    const ready = run.endAt <= Date.now();
-    const meter = node.querySelector(".progress span");
-    const time = node.querySelector("[data-dungeon-time]");
-    const button = node.querySelector("button");
-    if (meter) meter.style.width = `${Math.min(100, (Date.now() - run.startedAt) / Math.max(1, run.endAt - run.startedAt) * 100)}%`;
-    if (time) time.textContent = ready ? "Ready to claim" : formatTime(run.endAt - Date.now());
-    if (button) {
-      button.disabled = !ready;
-      button.classList.toggle("primary", ready);
-      button.classList.toggle("ghost", !ready);
-      button.textContent = ready ? "Claim result" : `${Math.round(run.chance * 100)}% chance`;
-    }
-  }
-  document.querySelectorAll("[data-skill-widget]").forEach((node) => {
-    const skillId = node.dataset.skillWidget;
-    const progress = gameState.skills?.[skillId] || { level: 1, xp: 0 };
-    const level = Number(progress.level || 1);
-    const needed = level >= 100 ? 0 : xpForNextLevel(level, "skill");
-    const percent = needed ? Math.min(100, Number(progress.xp || 0) / needed * 100) : 100;
-    const levelText = node.querySelector("[data-skill-level]");
-    const meter = node.querySelector("[data-skill-xp-meter]");
-    const xpText = node.querySelector("[data-skill-xp-text]");
-    const toGo = node.querySelector("[data-skill-to-go]");
-    if (levelText) levelText.textContent = `${level}`;
-    if (meter) meter.style.width = `${percent}%`;
-    if (xpText) xpText.textContent = needed ? `${formatNumber(progress.xp)} / ${formatNumber(needed)} XP` : "Maximum level";
-    if (toGo) toGo.textContent = needed ? `${formatNumber(Math.max(0, needed - Number(progress.xp || 0)))} XP to Lv ${level + 1}` : "Mastered";
-  });
-  updateBattleClock();
-}
-
-function panelHeading(eyebrow, title, summary = "", action = "") {
-  return `<div class="section-heading"><div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h1>${escapeHtml(title)}</h1>${summary ? `<p class="summary">${escapeHtml(summary)}</p>` : ""}</div>${action}</div>`;
-}
-
-function renderPanel() {
-  if (!gameState) return;
-  $$(".nav-button").forEach((button) => button.classList.toggle("active", button.dataset.panel === currentPanel));
-  const renders = {
-    overview: renderOverview, activities: renderActivities, skills: renderSkills, combat: renderCombat, den: renderDen,
-    equipment: renderEquipment, inventory: renderInventoryPanel, store: renderStore,
-    kitchen: renderKitchen, processing: renderProcessing, construction: renderConstruction,
-    dungeons: renderDungeons, market: renderMarket, collection: renderCollection,
-  };
-  (renders[currentPanel] || renderOverview)();
-  panel.scrollTop = 0;
-}
-
-function renderOverview() {
-  const totalSkill = Object.values(gameState.skills).reduce((sum, skill) => sum + Number(skill.level || 1), 0);
-  const totalPower = gameState.pets.reduce((sum, pet) => sum + scaledPetStats(pet).power, 0);
-  const standings = leaderboard.length ? leaderboard.slice(0, 8) : [{ displayName: gameState.profile.displayName, petPower: totalPower, totalSkill, captures: gameState.stats.captures }];
-  panel.innerHTML = `${panelHeading("Keeper dashboard", `Welcome back, ${gameState.profile.displayName}`, "Choose sessions from one to twenty-four hours. Work, combat patrols, Processing, and dungeons continue after the browser closes.")}
-    <section class="feature-card card">
-      <div class="feature-copy"><p class="eyebrow">Next useful move</p><h2>${gameState.pendingEncounter ? `Resolve the ${SPECIES_BY_ID[gameState.pendingEncounter.speciesId].name} encounter` : gameState.combatPatrol ? "Your patrol is hunting while you are away" : gameState.activities.length ? "Your den is already at work" : "Plan the den's next shift"}</h2><p>${gameState.pendingEncounter ? "Use a cooked meal for a capture attempt, or send the defeated pet to Processing." : gameState.combatPatrol ? "Combat resolves encounter by encounter, keeps injuries, uses meals only for Auto-eat, and sends victories to Processing." : gameState.activities.length ? "Saved session timers continue offline until their scheduled end, manual stop, or full storage." : "Set a one-to-twenty-four-hour work session, or send a party on a persistent combat patrol."}</p><button class="button" data-panel-jump="${gameState.pendingEncounter || gameState.combatPatrol ? "combat" : "activities"}" type="button">${gameState.pendingEncounter ? "Open encounter" : gameState.combatPatrol ? "Check patrol" : "Choose an activity"}</button></div>
-      <div class="feature-creatures" aria-hidden="true"><img src="pets/moss-hare.png" alt=""/><img src="pets/dawn-koi.png" alt=""/><img src="pets/storm-lynx.png" alt=""/></div>
+function pageHead(kicker,title,copy,extra=''){return `<header class="page-head"><div><p class="eyebrow">${kicker}</p><h1>${title}</h1><p>${copy}</p></div>${extra}</header>`;}
+function renderHome(){
+  const active=[];
+  if(state.keeperAssignment)active.push(`<article class="active-card"><span class="who">YOU</span><div><b>${esc(assignmentName(state.keeperAssignment))}</b><small>${esc(state.keeperAssignment.pausedReason||'Working continuously')}</small>${actionBar(state.keeperAssignment)}</div><button data-stop-keeper class="mini-btn">Stop</button></article>`);
+  for(const [id,a] of Object.entries(state.petAssignments)){const p=state.pets.find(x=>x.id===id);if(!p)continue;const sp=SPECIES_BY_ID[p.speciesId];active.push(`<article class="active-card"><div class="tiny-art">${art(sp)}</div><div><b>${esc(p.customName||sp.name)}</b><small>${esc(assignmentName(a))}${a.pausedReason?` · ${esc(a.pausedReason)}`:''}</small>${actionBar(a)}</div><button data-stop-pet="${id}" class="mini-btn">Stop</button></article>`);}
+  const ci=skillInfo('combat');
+  return `${pageHead('YOUR DEN','Welcome back, Keeper.','Everything here runs until you tell it to stop. Start a skill, put pets to work, or head into continuous combat.')}
+    <section class="hero-grid">
+      <article class="hero-card keeper-card"><p class="eyebrow">KEEPER</p><h2>${esc(state.keeperAssignment?assignmentName(state.keeperAssignment):'Ready to train')}</h2><div class="big-stat"><span>Combat</span><strong>${ci.level}</strong></div><button data-go="skills" class="btn primary">Choose a skill</button></article>
+      <article class="hero-card"><p class="eyebrow">PETS WORKING</p><h2>${Object.keys(state.petAssignments).length} / ${MAX_ACTIVE_PETS}</h2><p>Your pets work beside you. Their aptitude affects efficiency, not access.</p><button data-go="pets" class="btn">Manage pets</button></article>
+      <article class="hero-card"><p class="eyebrow">COMBAT</p><h2>${state.combat?state.combat.state==='stopped'?'Party down':'Fighting now':'Ready'}</h2><p>${state.combat?`${REGIONS.find(r=>r.id===state.combat.regionId)?.name||'Wilds'} · ${state.stats.kills} total wins`:'Pick a region and fight until you stop.'}</p><button data-go="combat" class="btn">${state.combat?'Open battle':'Start combat'}</button></article>
     </section>
-    ${gameState.combatPatrol ? `<div style="margin-top:1rem">${combatPatrolCard(true)}</div>` : ""}
-    <div style="margin-top:1rem">${liveAssignmentsBoard("Den activity")}</div>
-    <section class="grid four" style="margin-top:1rem">
-      <article class="stat-card card"><span>Total skill</span><strong>${formatNumber(totalSkill)}</strong><small>Across ${SKILLS.length} disciplines</small></article>
-      <article class="stat-card card"><span>Den power</span><strong>${formatNumber(totalPower)}</strong><small>${gameState.pets.length} owned pets</small></article>
-      <article class="stat-card card"><span>Captures</span><strong>${formatNumber(gameState.stats.captures)}</strong><small>${gameState.discoveries.length} species discovered</small></article>
-      <article class="stat-card card"><span>Dungeon clears</span><strong>${formatNumber(gameState.stats.dungeonClears)}</strong><small>${gameState.dungeonRuns.length} expeditions underway</small></article>
-    </section>
-    <section class="grid two" style="margin-top:1rem">
-      <article class="card card-pad"><div class="section-heading compact-heading"><div><p class="eyebrow">Skills</p><h2>Strongest disciplines</h2></div><button class="text-button" data-panel-jump="skills" type="button">Open skill book</button></div><div class="overview-skills">${[...SKILLS].sort((a, b) => skillLevel(gameState, b.id) - skillLevel(gameState, a.id)).slice(0, 6).map((skill) => skillProgressMarkup(skill.id, true)).join("")}</div></article>
-      <article class="card card-pad"><div class="section-heading compact-heading"><div><p class="eyebrow">Owned only</p><h2>Storage</h2></div><span class="tag">${inventoryStackCount()}/${storageCapacity(gameState)} stacks</span></div>${renderInventory()}</article>
-    </section>
-    <section class="card card-pad" style="margin-top:1rem"><div class="section-heading compact-heading"><div><p class="eyebrow">Shared world</p><h2>Keeper standings</h2></div><span class="tag">${mode === "firebase" ? "Live" : "Local preview"}</span></div><div class="leaderboard-list">${standings.map((entry, index) => `<div class="leaderboard-row"><strong>${index + 1}</strong><span>${escapeHtml(entry.displayName || "Keeper")}<small>${formatNumber(entry.captures || 0)} captures · ${formatNumber(entry.totalSkill || 0)} total skill</small></span><b>${formatNumber(entry.petPower || 0)} power</b></div>`).join("")}</div></section>`;
+    <section class="section"><div class="section-title"><div><p class="eyebrow">ACTIVE NOW</p><h2>Idle actions</h2></div><span>${active.length} running</span></div>${active.length?`<div class="active-list">${active.join('')}</div>`:`<div class="empty">Nothing is running yet. Pick a skill and start training.</div>`}</section>
+    <section class="stat-strip"><div><b>${fmt(state.stats.actions)}</b><span>actions</span></div><div><b>${fmt(state.stats.kills)}</b><span>wins</span></div><div><b>${fmt(state.stats.captures)}</b><span>pets tamed</span></div><div><b>${fmt(state.stats.processed)}</b><span>processed</span></div></section>`;
 }
-
-function renderInventory() {
-  const entries = Object.entries(gameState.inventory).filter(([, quantity]) => Number(quantity) > 0).sort((a, b) => inventoryName(a[0]).localeCompare(inventoryName(b[0])));
-  if (!entries.length) return `<div class="empty-state">Storage is empty.</div>`;
-  return `<div class="inventory-grid">${entries.map(([id, quantity]) => `<div class="inventory-item"><span>${escapeHtml(inventoryName(id))}</span><strong>${formatNumber(quantity)}</strong></div>`).join("")}</div>`;
+function actionBar(a){if(!a)return'';const now=Date.now(),int=a.intervalMs||5000,left=Math.max(0,(a.nextAt||now)-now),pct=100-left/int*100;return `<div class="action-progress"><span style="width:${Math.max(0,Math.min(100,pct))}%"></span></div>`;}
+function renderSkills(){
+  const cards=GATHER.map(id=>{const def=SKILLS.find(s=>s.id===id)||{name:id,description:''},info=skillInfo(id);return `<button class="skill-card ${stateUi.skill===id?'selected':''}" data-skill="${id}"><div class="skill-icon">${skillIcon(id)}</div><div><small>${esc(def.name)}</small><strong>${info.level}</strong>${progress(info)}</div></button>`;}).join('');
+  return `${pageHead('SKILLS','Train forever.','You train one action at a time. Pets can independently work the same skill or a different one.')}
+    <div class="skill-layout"><aside class="skill-grid">${cards}</aside><section class="skill-detail">${renderSkillDetail(stateUi.skill)}</section></div>`;
 }
-
-function renderActivities() {
-  const gatheringSkills = ["woodcutting", "mining", "foraging", "fishing", "mischief"];
-  const skill = SKILLS.find((entry) => entry.id === currentSkill) || SKILLS[0];
-  const actions = ACTIVITIES.filter((entry) => entry.skill === currentSkill);
-  panel.innerHTML = `${panelHeading("Work assignments", skill.name, skill.description)}
-    ${liveAssignmentsBoard("Gathering and Mischief", (assignment) => ["activity", "keeper"].includes(assignment.kind))}
-    <div class="active-skill-card card">${skillProgressMarkup(skill.id)}</div>
-    <div class="activity-layout">
-      <div class="skill-tabs">${gatheringSkills.map((id) => { const item = SKILLS.find((entry) => entry.id === id); const level = skillLevel(gameState, id); const progress = gameState.skills?.[id] || { xp: 0 }; const needed = level >= 100 ? 1 : xpForNextLevel(level, "skill"); return `<button class="skill-tab ${id === currentSkill ? "active" : ""}" data-skill="${id}" type="button"><span class="skill-tab-copy"><strong>${escapeHtml(item.name)}</strong><b>Lv ${level}</b></span><i><span style="width:${Math.min(100, Number(progress.xp || 0) / needed * 100)}%"></span></i></button>`; }).join("")}</div>
-      <div class="action-list">${actions.map((action) => actionCard(action)).join("")}</div>
-    </div>`;
+function skillIcon(id){return ({woodcutting:'🪓',mining:'⛏',foraging:'🌿',fishing:'🎣',mischief:'🦝',processing:'⚙',cooking:'🍲',crafting:'🔨'})[id]||'✦';}
+function renderSkillDetail(id){
+  const def=SKILLS.find(s=>s.id===id)||{name:id,description:''},info=skillInfo(id);
+  let tasks=[];
+  if(['cooking','crafting'].includes(id))tasks=RECIPES.filter(r=>r.skill===id);
+  else if(id==='processing')tasks=[{id:'remains',name:'Process Battle Remains',level:1,duration:10,xp:18,special:'processing'}];
+  else tasks=ACTIVITIES.filter(a=>a.skill===id);
+  return `<div class="detail-head"><div class="skill-orb">${skillIcon(id)}</div><div><p class="eyebrow">${esc(def.name)}</p><h2>Level ${info.level}</h2><p>${esc(def.description)}</p></div></div>
+    <div class="full-xp"><span>${fmt(info.progressXp)} / ${info.nextXp?fmt(info.nextXp):'MAX'} XP</span>${progress(info)}</div>
+    <div class="task-list">${tasks.map(t=>taskCard(id,t,info.level)).join('')}</div>`;
 }
-
-function renderSkills() {
-  const groups = [
-    ["Fieldcraft", "The practical arts that bring resources and secrets home.", ["woodcutting", "mining", "foraging", "fishing", "mischief"]],
-    ["Dencraft", "Production skills that turn raw finds into lasting progress.", ["processing", "cooking", "crafting", "construction"]],
-    ["Battlecraft", "Your Keeper's fighting disciplines and command of the den.", ["combat", "melee", "ranged", "magic", "petMastery"]],
-  ];
-  const totalLevels = SKILLS.reduce((sum, skill) => sum + skillLevel(gameState, skill.id), 0);
-  panel.innerHTML = `${panelHeading("Keeper progression", "Skill Book", "Every action leaves a permanent mark. Current level, exact progress, and XP remaining are shown together.", `<span class="tag skill-total">${formatNumber(totalLevels)} total levels</span>`)}
-    <section class="skill-book card">${groups.map(([title, description, ids]) => `<div class="skill-chapter"><div class="skill-chapter-heading"><div><p class="eyebrow">${escapeHtml(title)}</p><h2>${escapeHtml(description)}</h2></div><span>${ids.length} skills</span></div><div class="skill-book-list">${ids.map((id) => skillProgressMarkup(id)).join("")}</div></div>`).join("")}</section>`;
+function taskCard(skill,t,level){
+  const locked=level<t.level, type=t.special==='processing'?'processing':(['cooking','crafting'].includes(skill)?'recipe':'activity');
+  const rewards=t.output||t.rewards||{};const costs=t.ingredients||{};
+  const rewardText=Object.entries(rewards).map(([id,q])=>`${q} ${itemName(id)}`).join(' · ')||(type==='processing'?'Materials from the defeated species':'');
+  const costText=Object.entries(costs).map(([id,q])=>`${q} ${itemName(id)}`).join(' · ');
+  const keeperHere=state.keeperAssignment?.type===type && state.keeperAssignment?.targetId===(type==='processing'?'remains':t.id);
+  const workerIds=Object.entries(state.petAssignments).filter(([,a])=>a.type===type&&a.targetId===(type==='processing'?'remains':t.id)).map(([id])=>id);
+  return `<article class="task ${locked?'locked':''}"><div class="task-top"><div><small>LEVEL ${t.level} · ${t.duration||10}s base</small><h3>${esc(t.name)}</h3></div><span class="reward">${esc(rewardText)}</span></div>${costText?`<p class="cost">Uses: ${esc(costText)}</p>`:''}
+    <div class="task-actions"><button class="btn ${keeperHere?'danger':'primary'}" data-keeper-task="${type}|${type==='processing'?'remains':t.id}" ${locked?'disabled':''}>${keeperHere?'Stop Keeper':'Train this'}</button><button class="btn" data-pet-picker="${type}|${type==='processing'?'remains':t.id}" ${locked?'disabled':''}>Assign pet</button>${workerIds.length?`<span class="worker-chip">🐾 ${workerIds.length} working</span>`:''}</div></article>`;
 }
-
-function actionCard(action) {
-  const playerLevel = skillLevel(gameState, action.skill);
-  const unlocked = playerLevel >= action.level;
-  const rewards = Object.entries(action.rewards || {}).map(([id, amount]) => `${amount} ${inventoryName(id)}`).join(" · ");
-  return `<article class="action-card ${unlocked ? "" : "locked"}"><div><h3>${escapeHtml(action.name)}</h3><div class="action-meta"><span>${formatTime(keeperDisplayDuration(action))} per Keeper action</span><span>${action.xp} XP</span><span>${escapeHtml(rewards)}</span>${action.coins ? `<span>${action.coins} coins</span>` : ""}</div>${unlocked ? `<p class="requirements">Choose a 1–24 hour session. Any pet can attempt it; aptitude changes action time and possible yield. Food is not required.</p>` : `<p class="requirements">Requires ${SKILLS.find((entry) => entry.id === action.skill).name} ${action.level}</p>`}</div><div class="action-buttons"><button class="button secondary" data-action="open-keeper-start" data-id="${action.id}" ${!unlocked || gameState.keeperActivity || gameState.combatPatrol?.includeKeeper ? "disabled" : ""} type="button">Do it myself</button><button class="button ${unlocked ? "primary" : "ghost"}" data-action="open-start" data-kind="activity" data-id="${action.id}" ${unlocked ? "" : "disabled"} type="button">Assign pet</button></div></article>`;
+function renderPets(){
+  return `${pageHead('YOUR COMPANIONS','Pet Den',`${state.pets.length} / ${denCapacity(state)} spaces used. Pets can work skills, fight, level up, get injured, and always be healed.`)}
+    <div class="pet-grid">${state.pets.map(p=>petCard(p)).join('')}</div>`;
 }
-
-function renderInventoryPanel() {
-  const categories = ["all", "meal", "medicine", "tool", "weapon", "armor", "ingredient", "material", "supply"];
-  const entries = Object.entries(gameState.inventory).filter(([id, quantity]) => Number(quantity) > 0 && (inventoryFilter === "all" || ITEMS[id]?.category === inventoryFilter)).sort((a, b) => inventoryName(a[0]).localeCompare(inventoryName(b[0])));
-  panel.innerHTML = `${panelHeading("Owned items only", "Inventory & Storage", "Browse everything you own, filter by category, equip gear, and use healing supplies.", `<span class="tag">${inventoryStackCount()}/${storageCapacity(gameState)} stacks</span>`)}
-    <div class="inventory-filters">${categories.map((category) => `<button class="skill-tab ${inventoryFilter === category ? "active" : ""}" data-inventory-filter="${category}" type="button">${category === "all" ? "All" : category[0].toUpperCase() + category.slice(1)}</button>`).join("")}</div>
-    ${entries.length ? `<div class="storage-grid compact-storage">${entries.map(([id, quantity]) => inventoryDetailCard(id, quantity)).join("")}</div>` : `<div class="empty-state">No owned items match this category.</div>`}`;
+function petCard(p){const sp=SPECIES_BY_ID[p.speciesId],st=scaledPetStats(p),hp=Math.round(p.currentHp||0),down=hp<=0,a=state.petAssignments[p.id],fighting=state.combat?.petIds?.includes(p.id);const apt=Object.entries(sp.aptitudes||{}).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  return `<article class="pet-card ${down?'downed':''}"><div class="pet-portrait">${art(sp)}</div><div class="pet-body"><div class="pet-title"><div><small>${esc(sp.affinity)} · ${esc(sp.acquisition)}</small><h3>${esc(p.customName||sp.name)}</h3></div><b>Lv ${p.level}</b></div><div class="hpbar"><span style="width:${st.hp?hp/st.hp*100:0}%"></span></div><small>${hp} / ${st.hp} HP ${down?'· DOWNED':''}</small><div class="aptitudes">${apt.map(([id,n])=>`<span>${esc(id)} ${n}</span>`).join('')}</div><p class="passive"><b>${esc(sp.passive.name)}</b> — ${esc(sp.passive.description)}</p><div class="pet-actions">${down?healingButtons(p.id):`<button class="btn small" data-pet-work="${p.id}">${a?'Change work':'Assign work'}</button>`}${a?`<button class="btn small danger" data-stop-pet="${p.id}">Stop</button>`:''}${fighting?'<span class="status-chip">⚔ Fighting</span>':''}</div></div></article>`;}
+function healingButtons(petId){const foods=ownedHealing().slice(0,3);return foods.length?foods.map(([id,q])=>`<button class="btn small heal" data-heal-pet="${petId}|${id}">${esc(itemName(id))} (${q}) +${ITEMS[id].heal}</button>`).join(''):'<span class="danger-text">No healing food or tonics. Gather berries or buy/cook food.</span>';}
+function renderInventory(){
+  const entries=Object.entries(state.inventory).filter(([,q])=>q>0).sort((a,b)=>(ITEMS[a[0]]?.category||'').localeCompare(ITEMS[b[0]]?.category||'')||itemName(a[0]).localeCompare(itemName(b[0])));
+  return `${pageHead('STORAGE','Inventory','Raw food is useful immediately; cooked food is stronger. Equipment can be equipped here.')}
+    <div class="inventory-grid">${entries.map(([id,q])=>itemCard(id,q)).join('')}</div>`;
 }
-
-function inventoryDetailCard(id, quantity) {
-  const item = ITEMS[id] || { name: inventoryName(id), category: "item" };
-  const equipped = Object.values(gameState.equipment || {}).includes(id);
-  return `<button class="inventory-tile item-${escapeHtml(item.category || "item")}" data-action="item-details" data-id="${id}" type="button" title="${escapeHtml(item.name)}">
-    ${equipped ? `<span class="equipped-dot">E</span>` : ""}
-    <span class="item-art">${itemIconMarkup(item)}</span>
-    <span class="item-tile-name">${escapeHtml(item.name)}</span>
-    <strong class="quantity-badge">${formatNumber(quantity)}</strong>
-  </button>`;
+function itemCard(id,q){const it=ITEMS[id]||{name:itemName(id),category:'item'};const eq=Object.values(state.equipment).includes(id);return `<article class="item-card"><div class="item-icon">${categoryIcon(it.category)}</div><div><small>${esc(it.category||'item')}</small><h3>${esc(it.name)}</h3><b>×${fmt(q)}</b>${it.heal?`<p>Restores ${it.heal} HP.</p>`:''}${it.slot?`<p>${eq?'Equipped':'Equipment · '+it.slot}</p>`:''}<div class="item-actions">${it.heal?`<button class="mini-btn" data-use-item="${id}">Use</button>`:''}${it.slot&&!eq?`<button class="mini-btn" data-equip="${id}">Equip</button>`:''}</div></div></article>`;}
+function categoryIcon(c){return ({meal:'🍲',ingredient:'🌿',medicine:'✚',material:'◆',weapon:'⚔',armor:'🛡',tool:'⌁',supply:'🎒'})[c]||'◇';}
+function renderCombat(){
+  if(state.combat)return renderActiveCombat();
+  const living=state.pets.filter(p=>p.currentHp>0&&!state.petAssignments[p.id]);
+  return `${pageHead('CONTINUOUS COMBAT','The Wilds','Choose a region and party. Once started, enemies chain together until you stop or your party is down. There is no search timer and no session length.')}
+    <section class="combat-setup-card"><label>Region<select id="combat-region" class="input">${REGIONS.map(r=>`<option value="${r.id}" ${stateUi.region===r.id?'selected':''}>${r.name} · Combat ${r.level}+</option>`).join('')}</select></label>
+      <div class="toggle-row"><label class="check"><input id="combat-keeper" type="checkbox" ${stateUi.combatKeeper?'checked':''}/> Keeper fights</label><label class="check"><input id="combat-autoeat" type="checkbox" checked/> Auto-eat healing food</label></div>
+      <h3>Choose up to ${MAX_COMBAT_PETS} pets</h3><div class="party-picker">${living.map(p=>{const sp=SPECIES_BY_ID[p.speciesId],st=scaledPetStats(p);return `<label class="party-pick ${stateUi.selectedCombat.has(p.id)?'selected':''}"><input type="checkbox" data-combat-pet value="${p.id}" ${stateUi.selectedCombat.has(p.id)?'checked':''}/><div class="tiny-art">${art(sp)}</div><span><b>${esc(p.customName||sp.name)}</b><small>Lv ${p.level} · Power ${st.power}</small></span></label>`;}).join('')}</div><div class="combat-start"><div><small>Party power</small><strong id="party-power">${partyPowerFor(state,[...stateUi.selectedCombat],stateUi.combatKeeper)}</strong></div><button id="start-combat" class="btn primary big">Start fighting</button></div></section>`;
 }
-
-function renderEquipment() {
-  const stats = keeperStats(gameState);
-  panel.innerHTML = `${panelHeading("Keeper loadout", "Equipment", "Your Keeper has no class. The equipped weapon determines whether combat trains Melee, Ranged, or Magic.")}
-    <section class="keeper-sheet card"><div class="keeper-sigil">K</div><div><p class="eyebrow">${escapeHtml(gameState.profile.displayName)}</p><h2>${gameState.profile.currentHp}/${stats.maxHp} health</h2><div class="health-bar light"><span style="width:${Math.max(0, gameState.profile.currentHp / stats.maxHp * 100)}%"></span></div><div class="equipment-stats"><span>Attack <strong>${stats.attack}</strong></span><span>Defence <strong>${stats.defense}</strong></span><span>Speed <strong>${stats.speed}</strong></span><span>Passive recovery <strong>1% / hour</strong></span></div></div></section>
-    <div class="equipment-grid">${EQUIPMENT_SLOTS.map((slot) => { const id = gameState.equipment?.[slot.id]; const item = ITEMS[id]; return `<article class="equipment-slot card"><p class="eyebrow">${slot.name}</p><h3>${escapeHtml(item?.name || "Empty")}</h3><p class="muted small-copy">${item?.style ? `${item.style} style · ` : ""}${item?.skill ? `${item.skill} tool · ` : ""}${item ? [item.attack && `+${item.attack} attack`, item.defense && `+${item.defense} defence`, item.hp && `+${item.hp} health`, item.speedBonus && `${Math.round(item.speedBonus * 100)}% faster`].filter(Boolean).join(" · ") || "Utility gear" : "Equip an owned item from Inventory."}</p></article>`; }).join("")}</div>
-    <section class="card card-pad" style="margin-top:1rem"><div class="section-heading compact-heading"><div><p class="eyebrow">Combat disciplines</p><h2>Keeper skill levels</h2></div></div><div class="overview-skills">${["combat", "melee", "ranged", "magic"].map((id) => skillProgressMarkup(id)).join("")}</div></section>`;
+function renderActiveCombat(){const c=state.combat,e=c.enemy,sp=e?SPECIES_BY_ID[e.speciesId]:null;const region=REGIONS.find(r=>r.id===c.regionId);const party=c.petIds.map(id=>state.pets.find(p=>p.id===id)).filter(Boolean);
+  return `${pageHead(c.dungeonId?'DUNGEON FIGHT':'LIVE COMBAT',c.dungeonId?(DUNGEONS.find(d=>d.id===c.dungeonId)?.name||'Dungeon'):region?.name||'The Wilds',c.state==='stopped'?'Your party is down. Heal them and resume when ready.':'This is the current fight. When it ends, the next enemy appears almost immediately.',`<button id="stop-combat" class="btn danger">Stop combat</button>`)}
+    <section class="battle-stage ${c.state==='stopped'?'battle-stopped':''}"><div class="battle-status"><span class="live-dot"></span><b>${c.state==='between'?'Next enemy…':c.state==='stopped'?'Party down':'FIGHTING'}</b><small>Battle ${c.battle||1}</small></div>
+      <div class="battle-grid"><div class="fighters"><p class="eyebrow">YOUR PARTY</p>${c.includeKeeper?keeperFighter():''}${party.map(p=>fighterCard(p)).join('')}</div><div class="versus">VS</div><div class="enemy-panel">${sp?`<div class="enemy-art">${art(sp,'enemy-img')}</div><h2>${esc(sp.name)}</h2><small>${esc(sp.affinity)}</small><div class="hpbar enemy"><span style="width:${e.maxHp?e.hp/e.maxHp*100:0}%"></span></div><b>${Math.max(0,Math.ceil(e.hp))} / ${e.maxHp} HP</b>`:'<div class="searchless"><span>⚔</span><b>Next fight</b></div>'}</div></div>
+      <div class="battle-feed"><b>${esc(c.lastEvent?.text||'Battle underway…')}</b><small>${c.autoEat?'Auto-eat on':'Auto-eat off'} · ${state.stats.kills} total victories</small></div>
+      ${c.state==='stopped'?`<div class="resume-box"><p>Heal the downed fighters in the Pet Den or heal the Keeper, then resume.</p><button id="resume-combat" class="btn primary">Resume combat</button></div>`:''}</section>`;
 }
+function keeperFighter(){const hp=state.profile.currentHp,max=state.profile.maxHp;return `<div class="fighter-card"><div class="keeper-avatar">K</div><div><b>Keeper</b><small>${Math.round(hp)} / ${max} HP</small><div class="hpbar"><span style="width:${hp/max*100}%"></span></div></div></div>`;}
+function fighterCard(p){const sp=SPECIES_BY_ID[p.speciesId],max=scaledPetStats(p).hp;return `<div class="fighter-card"><div class="tiny-art">${art(sp)}</div><div><b>${esc(p.customName||sp.name)}</b><small>${Math.round(p.currentHp)} / ${max} HP</small><div class="hpbar"><span style="width:${p.currentHp/max*100}%"></span></div></div></div>`;}
+function renderDungeons(){const combat=skillLevel(state,'combat');return `${pageHead('BOSS PROGRESSION','Dungeons','Dungeons are combat encounters, not hour-long timers. Meet the level, bring the key, and fight the boss live.')}
+  <div class="dungeon-list">${DUNGEONS.map(d=>{const sp=SPECIES_BY_ID[d.encounter],locked=combat<d.level;return `<article class="dungeon-card ${locked?'locked':''}"><div class="dungeon-art">${art(sp)}</div><div><small>COMBAT ${d.level} · POWER ${d.recommendedPower}</small><h2>${esc(d.name)}</h2><p>Boss: ${esc(sp.name)} · Favored affinity: ${esc(d.favored)}</p><p class="cost">Entry: ${Object.entries(d.entry||{}).map(([id,q])=>`${q} ${itemName(id)}`).join(' · ')||'Free'}</p><p class="reward">Rewards: ${Object.entries(d.rewards||{}).map(([id,q])=>`${q} ${itemName(id)}`).join(' · ')}</p><button class="btn primary" data-dungeon="${d.id}" ${locked?'disabled':''}>${locked?`Combat ${d.level} required`:'Choose party & enter'}</button></div></article>`;}).join('')}</div>`;}
+function renderUpgrades(){return `${pageHead('PERMANENT PROGRESSION','Den Upgrades','Spend materials on permanent upgrades. No construction session timer—if you can afford it, you build it.')}
+  <div class="upgrade-grid">${BUILDINGS.map(b=>{const lv=state.buildings[b.id]||0,done=!b.repeatable&&lv>=1,max=b.repeatable&&lv>=b.maxLevel,mult=1+Math.floor(lv/2)*.55,cost=Object.entries(b.costs||{}).map(([id,q])=>`${Math.ceil(q*mult)} ${itemName(id)}`).join(' · ');return `<article class="upgrade-card"><small>${b.repeatable?`LEVEL ${lv}/${b.maxLevel}`:lv?'BUILT':'PERMANENT'}</small><h2>${esc(b.name)}</h2><p>${esc(b.description)}</p><p class="cost">${esc(cost)}</p><button class="btn primary" data-build="${b.id}" ${done||max?'disabled':''}>${done||max?'Complete':'Build now'}</button></article>`;}).join('')}</div>`;}
 
-function renderStore() {
-  panel.innerHTML = `${panelHeading("Coins for essentials", "General Store", "Buy starter food, medicine, tools, weapons, and basic armour. Store purchases go directly to storage.", `<span class="tag">${formatNumber(gameState.profile.coins)} coins</span>`)}
-    <div class="store-grid">${STORE_ITEMS.map((listing) => { const item = ITEMS[listing.itemId]; return `<article class="store-card card"><p class="eyebrow">${escapeHtml(item.category)}</p><h3>${escapeHtml(item.name)}</h3><p class="muted small-copy">${escapeHtml(listing.description)}</p><div class="store-buy"><strong>${formatNumber(listing.price)} coins</strong><button class="button primary small" data-action="buy-store-item" data-id="${listing.itemId}" type="button">Buy</button></div></article>`; }).join("")}</div>`;
+function bindScreen(){
+  $$('[data-go]').forEach(b=>b.onclick=()=>{stateUi.screen=b.dataset.go;renderNav();render();});
+  $$('[data-stop-keeper]').forEach(b=>b.onclick=()=>setState(stopKeeperAssignment(state),'Keeper stopped.'));
+  $$('[data-stop-pet]').forEach(b=>b.onclick=()=>setState(stopPetAssignment(state,b.dataset.stopPet),'Pet stopped.'));
+  $$('[data-skill]').forEach(b=>b.onclick=()=>{stateUi.skill=b.dataset.skill;render();});
+  $$('[data-keeper-task]').forEach(b=>b.onclick=()=>{const [type,id]=b.dataset.keeperTask.split('|');const current=state.keeperAssignment;if(current?.type===type&&current?.targetId===id)setState(stopKeeperAssignment(state),'Keeper stopped.');else try{setState(startKeeperAssignment(state,type,id),'Keeper started working.');}catch(e){toast(e.message);}});
+  $$('[data-pet-picker]').forEach(b=>b.onclick=()=>{const [type,id]=b.dataset.petPicker.split('|');openPetPicker(type,id);});
+  $$('[data-pet-work]').forEach(b=>b.onclick=()=>openWorkPicker(b.dataset.petWork));
+  $$('[data-heal-pet]').forEach(b=>b.onclick=()=>{const [pet,id]=b.dataset.healPet.split('|');try{setState(useHealingItem(state,id,{petId:pet}),`${itemName(id)} used.`);}catch(e){toast(e.message);}});
+  $$('[data-use-item]').forEach(b=>b.onclick=()=>openHealTarget(b.dataset.useItem));
+  $$('[data-equip]').forEach(b=>b.onclick=()=>{try{setState(equipItem(state,b.dataset.equip),'Equipped.');}catch(e){toast(e.message);}});
+  $$('[data-build]').forEach(b=>b.onclick=()=>{try{setState(buildUpgrade(state,b.dataset.build),'Upgrade built.');}catch(e){toast(e.message);}});
+  if($('#combat-region'))$('#combat-region').onchange=e=>{stateUi.region=e.target.value;};
+  if($('#combat-keeper'))$('#combat-keeper').onchange=e=>{stateUi.combatKeeper=e.target.checked;updatePower();};
+  $$('[data-combat-pet]').forEach(cb=>cb.onchange=()=>{if(cb.checked){if(stateUi.selectedCombat.size>=MAX_COMBAT_PETS){cb.checked=false;toast(`Choose up to ${MAX_COMBAT_PETS} pets.`);return;}stateUi.selectedCombat.add(cb.value);}else stateUi.selectedCombat.delete(cb.value);render();});
+  if($('#start-combat'))$('#start-combat').onclick=()=>{try{setState(startCombat(state,{regionId:$('#combat-region').value,petIds:[...stateUi.selectedCombat],includeKeeper:$('#combat-keeper').checked,autoEat:$('#combat-autoeat').checked}),'Combat started.');}catch(e){toast(e.message);}};
+  if($('#stop-combat'))$('#stop-combat').onclick=()=>setState(stopCombat(state),'Combat stopped.');
+  if($('#resume-combat'))$('#resume-combat').onclick=()=>setState(resumeCombat(state),'Combat resumed.');
+  $$('[data-dungeon]').forEach(b=>b.onclick=()=>openDungeonParty(b.dataset.dungeon));
 }
-
-function renderDen() {
-  panel.innerHTML = `${panelHeading("Roster management", "Pet Den", "Every pet can fight and attempt every action. Aptitudes determine action speed and yield; every completed action grants pet XP.", `<span class="tag">${gameState.pets.length}/${denCapacity(gameState)} spaces</span>`)}
-    ${gameState.pets.length ? `<div class="pet-grid">${gameState.pets.map((pet) => petCard(pet)).join("")}</div>` : `<div class="empty-state">Your den is empty.</div>`}`;
+function updatePower(){const el=$('#party-power');if(el)el.textContent=partyPowerFor(state,[...stateUi.selectedCombat],stateUi.combatKeeper);}
+function openPetPicker(type,targetId){
+  const eligible=state.pets.filter(p=>p.currentHp>0&&!state.combat?.petIds?.includes(p.id));
+  openModal(`<p class="eyebrow">ASSIGN PET</p><h2>${type==='processing'?'Process Remains':esc((type==='recipe'?RECIPES:ACTIVITIES).find(x=>x.id===targetId)?.name||'Work')}</h2><div class="modal-list">${eligible.map(p=>{const sp=SPECIES_BY_ID[p.speciesId],apt=sp.aptitudes?.[(type==='recipe'?(RECIPES.find(r=>r.id===targetId)?.skill):type==='processing'?'processing':ACTIVITIES.find(a=>a.id===targetId)?.skill)]||1;return `<button class="modal-pet" data-pick-pet="${p.id}"><div class="tiny-art">${art(sp)}</div><span><b>${esc(p.customName||sp.name)}</b><small>Aptitude ${apt} · Lv ${p.level}${state.petAssignments[p.id]?' · replaces current job':''}</small></span></button>`;}).join('')}</div>`);
+  $$('[data-pick-pet]',$('#modal')).forEach(b=>b.onclick=()=>{try{state=startPetAssignment(state,b.dataset.pickPet,type,targetId);saveSoon();$('#modal').close();render();toast('Pet assigned.');}catch(e){toast(e.message);}});
 }
+function openWorkPicker(petId){const p=state.pets.find(x=>x.id===petId),sp=SPECIES_BY_ID[p.speciesId];openModal(`<p class="eyebrow">${esc(p.customName||sp.name)}</p><h2>Choose work</h2><p>Pick a skill first; you can then choose the exact unlocked action.</p><div class="modal-skill-grid">${GATHER.map(id=>`<button data-work-skill="${id}" class="modal-skill"><span>${skillIcon(id)}</span><b>${esc(SKILLS.find(s=>s.id===id)?.name||id)}</b><small>Aptitude ${sp.aptitudes?.[id]||1}</small></button>`).join('')}</div>`);$$('[data-work-skill]',$('#modal')).forEach(b=>b.onclick=()=>{$('#modal').close();stateUi.screen='skills';stateUi.skill=b.dataset.workSkill;renderNav();render();toast('Choose the action, then tap Assign pet.');});}
+function openHealTarget(itemId){const item=ITEMS[itemId];openModal(`<p class="eyebrow">USE ${esc(item.name)}</p><h2>Restore ${item.heal} HP</h2><div class="modal-list"><button class="modal-pet" data-heal-target="keeper"><div class="keeper-avatar">K</div><span><b>Keeper</b><small>${Math.round(state.profile.currentHp)} / ${state.profile.maxHp} HP</small></span></button>${state.pets.map(p=>{const sp=SPECIES_BY_ID[p.speciesId],max=scaledPetStats(p).hp;return `<button class="modal-pet" data-heal-target="${p.id}"><div class="tiny-art">${art(sp)}</div><span><b>${esc(p.customName||sp.name)}</b><small>${Math.round(p.currentHp)} / ${max} HP</small></span></button>`;}).join('')}</div>`);$$('[data-heal-target]',$('#modal')).forEach(b=>b.onclick=()=>{try{state=useHealingItem(state,itemId,b.dataset.healTarget==='keeper'?{keeper:true}:{petId:b.dataset.healTarget});saveSoon();$('#modal').close();render();}catch(e){toast(e.message);}});}
+function openDungeonParty(dungeonId){const d=DUNGEONS.find(x=>x.id===dungeonId),living=state.pets.filter(p=>p.currentHp>0&&!state.petAssignments[p.id]);openModal(`<p class="eyebrow">${esc(d.name)}</p><h2>Choose party</h2><p>Recommended power ${d.recommendedPower}. The fight begins immediately.</p><label class="check"><input id="d-keeper" type="checkbox" checked/> Keeper fights</label><div class="modal-list">${living.map(p=>{const sp=SPECIES_BY_ID[p.speciesId];return `<label class="modal-pet"><input type="checkbox" data-d-pet value="${p.id}"/><div class="tiny-art">${art(sp)}</div><span><b>${esc(p.customName||sp.name)}</b><small>Power ${scaledPetStats(p).power}</small></span></label>`;}).join('')}</div><button id="enter-dungeon" class="btn primary wide">Enter dungeon</button>`);$('#enter-dungeon').onclick=()=>{const ids=$$('[data-d-pet]',$('#modal')).filter(x=>x.checked).slice(0,MAX_COMBAT_PETS).map(x=>x.value);try{state=startDungeon(state,dungeonId,ids,$('#d-keeper').checked);saveSoon();$('#modal').close();stateUi.screen='combat';renderNav();render();}catch(e){toast(e.message);}};}
+function openAccount(){openModal(`<p class="eyebrow">ACCOUNT</p><h2>${stateUi.user?esc(stateUi.user.email||stateUi.user.displayName||'Signed in'):'Local save'}</h2><p>${stateUi.cloud?'Your save syncs to your private Firestore player document.':'This game is saved in this browser.'}</p><button id="save-now" class="btn primary wide">Save now</button>${stateUi.user?'<button id="signout" class="btn wide">Sign out</button>':''}`);$('#save-now').onclick=()=>{saveSoon();toast('Saved.');};if($('#signout'))$('#signout').onclick=async()=>{await signOutCloud();stateUi.cloud=false;stateUi.user=null;state=null;$('#modal').close();showAuth();};}
+function openModal(html){$('#modal-body').innerHTML=html;$('#modal').showModal();}
 
-function renderKitchen() {
-  panel.innerHTML = `${panelHeading("Battle provisions and supplies", "Kitchen & Craft", "Meals heal combat injuries through Auto-eat or manual use and remain the offering used after a battle capture. Work never consumes food.")}
-    ${liveAssignmentsBoard("Kitchen and workshop", (assignment) => ["recipe", "keeper-recipe"].includes(assignment.kind))}
-    <div class="recipe-grid">${RECIPES.map((recipe) => {
-      const unlocked = skillLevel(gameState, recipe.skill) >= recipe.level;
-      return `<article class="recipe-card card ${unlocked ? "" : "locked"}"><p class="eyebrow">${recipe.skill}</p><h3>${escapeHtml(recipe.name)}</h3><p class="muted small-copy">${formatTime(recipe.duration * 1000 * ACTION_TIME_SCALE)} Keeper base · ${recipe.xp} XP · Level ${recipe.level}</p><div class="cost-list">${Object.entries(recipe.ingredients).map(([id, amount]) => `<span class="tag">${amount} ${escapeHtml(inventoryName(id))}</span>`).join("")}</div><p class="small-copy">Produces ${Object.entries(recipe.output).map(([id, amount]) => `${amount} ${inventoryName(id)}`).join(", ")}. Pet aptitude changes time and may multiply the batch.</p><div class="action-buttons"><button class="button secondary" data-action="start-keeper-recipe" data-id="${recipe.id}" ${!unlocked || gameState.keeperActivity || gameState.combatPatrol?.includeKeeper ? "disabled" : ""} type="button">Do it myself</button><button class="button ${unlocked ? "primary" : "ghost"}" data-action="open-start" data-kind="recipe" data-id="${recipe.id}" ${unlocked ? "" : "disabled"} type="button">${unlocked ? "Assign pet" : `Locked at ${recipe.level}`}</button></div></article>`;
-    }).join("")}</div>`;
-}
-
-function renderProcessing() {
-  const idleProcessors = gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0);
-  panel.innerHTML = `${panelHeading("Every victory has value", "Processing", "Defeated wild pets enter this queue after a declined, failed, or auto-harvested encounter. Processing recovers materials and coins.", `<span class="tag">${gameState.remains.length} waiting</span>`)}
-    <section class="processing-shift-launch card"><div><p class="eyebrow">Unattended queue worker</p><h2>Run Processing for 1–24 hours</h2><p>Assign a pet once and it will keep taking the oldest available remains—even ones your combat patrol brings home while you are away. An empty queue means it waits; food is never required.</p></div><div class="processing-shift-actions"><span><strong>${gameState.remains.length}</strong> waiting now</span><button class="button primary" data-action="open-processing-shift" ${idleProcessors.length ? "" : "disabled"} type="button">Assign Processing shift</button></div></section>
-    ${liveAssignmentsBoard("Processing shifts and jobs", (assignment) => ["processing", "processing-shift", "keeper-processing"].includes(assignment.kind))}
-    ${gameState.remains.length ? `<div class="recipe-grid">${gameState.remains.map((remain) => { const species = SPECIES_BY_ID[remain.speciesId]; return `<article class="recipe-card card processing-card"><p class="eyebrow">${escapeHtml(species.region)}</p><h3>${escapeHtml(species.name)}</h3><div class="processing-value"><span>Base coin recovery</span><strong>${processingCoinReward(species)}</strong></div><div class="cost-list">${Object.entries(species.materials).map(([id, amount]) => `<span class="tag">${amount} ${escapeHtml(inventoryName(id))}</span>`).join("")}</div><p class="muted small-copy">Processing aptitude changes time, material yield, and bonus coin recovery. A Smokehouse adds another permanent output boost.</p><div class="action-buttons"><button class="button secondary" data-action="start-keeper-processing" data-id="${remain.id}" ${gameState.keeperActivity || gameState.combatPatrol?.includeKeeper ? "disabled" : ""} type="button">Do it myself</button><button class="button primary" data-action="open-start" data-kind="processing" data-id="${remain.id}" type="button">Assign pet</button></div></article>`; }).join("")}</div>` : `<div class="empty-state"><strong>No remains are waiting.</strong><p>You can still start a Processing shift now; it will wait for combat patrol victories and future declined captures.</p></div>`}`;
-}
-
-function renderConstruction() {
-  panel.innerHTML = `${panelHeading("Permanent account growth", "Construction", "Expand hard capacities and build one-time facilities that provide small permanent bonuses.")}
-    ${liveAssignmentsBoard("Construction projects", (assignment) => ["construction", "keeper-construction"].includes(assignment.kind))}
-    <div class="building-grid">${BUILDINGS.map((building) => {
-      const level = Number(gameState.buildings[building.id] || 0);
-      const maxed = level >= building.maxLevel;
-      const costs = buildingCosts(gameState, building.id);
-      const requiredLevel = constructionRequirement(gameState, building.id);
-      const unlocked = !maxed && skillLevel(gameState, "construction") >= requiredLevel;
-      return `<article class="building-card card ${maxed || !unlocked ? "locked" : ""}"><p class="eyebrow">${building.repeatable ? `Level ${level}/${building.maxLevel}` : maxed ? "Completed" : "One-time structure"}</p><h3>${escapeHtml(building.name)}</h3><p class="muted small-copy">${escapeHtml(building.description)} · Construction ${requiredLevel}</p><div class="cost-list">${Object.entries(costs).map(([id, amount]) => `<span class="tag">${amount} ${escapeHtml(inventoryName(id))}</span>`).join("") || `<span class="tag">Built</span>`}</div><div class="action-buttons"><button class="button secondary" data-action="start-keeper-construction" data-id="${building.id}" ${!unlocked || gameState.keeperActivity || gameState.combatPatrol?.includeKeeper ? "disabled" : ""} type="button">Do it myself</button><button class="button ${unlocked ? "primary" : "ghost"}" data-action="open-start" data-kind="construction" data-id="${building.id}" ${unlocked ? "" : "disabled"} type="button">${maxed ? "Complete" : unlocked ? "Assign pet" : `Locked at ${requiredLevel}`}</button></div></article>`;
-    }).join("")}</div>`;
-}
-
-function idleCombatPartyMarkup(run = null) {
-  const ids = run?.petIds || continuousCombatRequest?.petIds || [...selectedCombatPets];
-  const pets = ids.map((petId) => gameState.pets.find((entry) => entry.id === petId)).filter(Boolean).slice(0, MAX_COMBAT_PETS);
-  if (!pets.length) return `<div class="party-emblem"><img src="logo.svg" alt=""/><strong>YOUR PARTY</strong></div>`;
-  return `<div class="idle-party-pets">${pets.map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; return `<img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(pet.customName || species.name)}"/>`; }).join("")}</div>`;
-}
-
-function renderCombat() {
-  const meals = ownedMeals();
-  const run = gameState.combatPatrol;
-  const pending = !activeBattle && gameState.pendingEncounter ? SPECIES_BY_ID[gameState.pendingEncounter.speciesId] : null;
-  const weapon = ITEMS[gameState.equipment?.weapon];
-  const preferences = gameState.combatPreferences || {};
-  const localSetup = readCombatSetup();
-  const availableRegions = REGIONS.filter((region) => listAreaOpponents(gameState, region.id).length);
-  if (run) selectedCombatRegion = run.regionId;
-  if (!listAreaOpponents(gameState, selectedCombatRegion).length && availableRegions.length) selectedCombatRegion = availableRegions[0].id;
-  const currentRegion = REGIONS.find((region) => region.id === selectedCombatRegion) || REGIONS[0];
-  const currentPool = listAreaOpponents(gameState, currentRegion.id);
-  const preferredMeal = meals.some(([id]) => id === preferences.mealId) ? preferences.mealId : meals[0]?.[0] || "";
-  const keeperUnavailable = Boolean(gameState.keeperActivity || Number(gameState.profile.currentHp || 0) <= 0);
-  const fighting = continuousCombatEnabled || Boolean(run) || Boolean(activeBattle);
-  panel.innerHTML = `${panelHeading("Continuous idle combat", "The Wilds", "Start fighting once. Battles continue back-to-back while you watch, and combat keeps idling when you leave. There are no combat-session timers and no wait-to-find-an-enemy countdowns.", fighting ? `<span class="tag hunt-live-tag"><i></i> Fighting</span>` : "")}
-    ${pending ? encounterCard(pending) : ""}
-    <section id="combat-stage" class="combat-stage ${activeBattle ? "battle-live" : "battle-idle"}">${activeBattle ? combatStageMarkup(activeBattle) : `<div class="combat-header"><span class="battle-state ready">${run ? "Returning to live combat…" : fighting ? "Finding next fight…" : "Wilds ready"}</span><span>${fighting ? "Continuous combat" : "Choose a party and begin"}</span></div><div class="idle-arena"><div>${idleCombatPartyMarkup(run)}</div><span>VS</span><div class="wild-silhouette"><span>WILD</span></div></div><div class="battle-message">${fighting ? "The next opponent is engaged immediately." : "Pick an area and party. Once started, fighting continues until you stop it."}</div>`}</section>
-    ${!activeBattle && !pending && !fighting ? `<div class="combat-setup">
-      <article class="selection-card card"><p class="eyebrow">Party</p><h3>Up to three pets; Keeper optional</h3><label class="check-option keeper-option"><input id="combat-keeper" type="checkbox" ${keeperUnavailable ? "disabled" : localSetup.includeKeeper === true ? "checked" : ""}/><span>Keeper<small>${gameState.keeperActivity ? "Busy with an action" : Number(gameState.profile.currentHp || 0) <= 0 ? "Downed — heal first" : `${escapeHtml(weapon?.name || "No weapon")} · ${escapeHtml(weapon?.style || "unarmed")}`}</small></span><strong>${gameState.profile.currentHp} HP</strong></label><div class="check-list" id="combat-pet-list">${gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0).map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; return `<label class="check-option"><input type="checkbox" name="combat-pet" value="${pet.id}" ${selectedCombatPets.has(pet.id) ? "checked" : ""}/><span>${escapeHtml(pet.customName || species.name)}<small>Level ${pet.level} · ${pet.currentHp}/${scaledPetStats(pet).hp} HP</small></span><strong>${formatNumber(scaledPetStats(pet).power)}</strong></label>`; }).join("") || `<div class="empty-state">No healthy idle pets are available. Heal a downed pet from its card or Inventory.</div>`}</div></article>
-      <article class="selection-card card hunt-control-card"><p class="eyebrow">Hunting ground</p><h3>${escapeHtml(currentRegion.name)}</h3><div class="area-picker">${REGIONS.map((region) => { const pool = listAreaOpponents(gameState, region.id); const unlocked = pool.length > 0; return `<button class="area-card ${region.id === selectedCombatRegion ? "active" : ""} ${unlocked ? "" : "locked"}" data-combat-region="${region.id}" ${unlocked ? "" : "disabled"} type="button"><span>${escapeHtml(region.name)}</span><small>${unlocked ? `${pool.length} possible enemies` : `Combat ${region.level}+`}</small></button>`; }).join("")}</div>
-        <div class="encounter-band"><span>Encounter pool</span><strong>${currentPool.length} enemies</strong><small>Every victory rolls straight into another encounter. Rare creatures and bosses stay rare.</small></div>
-        <div class="combat-controls"><label class="field">Combat style<select id="combat-style"><option value="${escapeHtml(weapon?.style || "melee")}">${escapeHtml((weapon?.style || "melee").replace(/^./, (c) => c.toUpperCase()))} · equipped weapon</option></select></label><label class="field">Battle food<select id="combat-meal">${meals.map(([id, quantity]) => `<option value="${id}" ${id === preferredMeal ? "selected" : ""}>${escapeHtml(inventoryName(id))} · heals ${ITEMS[id].heal} (${quantity})</option>`).join("") || `<option value="">No healing food owned</option>`}</select></label></div>
-        <div class="automation-grid"><label class="automation-option"><input id="combat-auto-eat" type="checkbox" ${(localSetup.autoEat ?? (preferences.autoEat !== false)) ? "checked" : ""}/><span><strong>Auto-eat</strong><small>Use selected food below 38% health.</small></span></label><label class="automation-option"><input id="combat-auto-harvest" type="checkbox" ${(localSetup.autoHarvest ?? true) ? "checked" : ""}/><span><strong>Auto-harvest</strong><small>Send victories to Processing so combat never pauses for capture decisions.</small></span></label></div>
-        <div class="hunt-mode-actions"><button class="button primary hunt-start" data-action="start-combat" ${!currentPool.length || (!selectedCombatPets.size && keeperUnavailable) ? "disabled" : ""} type="button">Start fighting</button></div>
-        <div class="notice"><strong>No patrol timer.</strong> Combat runs until you stop it. Open this screen any time to watch the current sequence of fights live.</div></article>
-    </div>` : fighting && !activeBattle && !pending ? `<div class="hunt-mode-actions" style="margin-top:1rem"><button class="button secondary" data-action="stop-continuous-combat" type="button">Stop fighting</button></div>` : ""}`;
-  updateBattleClock();
-}
-
-function encounterCard(species) {
-  const meals = ownedMeals();
-  return `<article class="card card-pad" style="margin-bottom:1rem"><div class="grid two"><div>${petVisual(species)} </div><div><p class="eyebrow">Capture opportunity</p><h2>${escapeHtml(species.name)}</h2><p class="muted">Use one cooked meal for a capture attempt. Failure sends the defeated pet to Processing.</p><label class="field">Capture meal<select id="capture-meal">${meals.map(([id, quantity]) => `<option value="${id}">${escapeHtml(inventoryName(id))} · +${Math.round(ITEMS[id].captureBonus * 100)}% (${quantity})</option>`).join("")}</select></label><div class="modal-actions"><button class="button primary" data-action="attempt-capture" ${meals.length ? "" : "disabled"} type="button">Offer meal</button><button class="button secondary" data-action="decline-capture" type="button">Send to Processing</button></div></div></div></article>`;
-}
-
-function combatStageMarkup(playback) {
-  const battle = playback.battle;
-  const fighter = (entry, enemy = false) => {
-    const species = SPECIES_BY_ID[entry.speciesId];
-    const keeper = entry.kind === "keeper";
-    const hp = Number(playback.hp[entry.id] ?? entry.startingHp ?? entry.maxHp);
-    const defeated = hp <= 0;
-    return `<div class="fighter ${enemy ? "enemy" : ""} ${defeated ? "defeated" : ""}" id="fighter-${entry.id}" data-fighter-id="${entry.id}">
-      <div class="fighter-card-head"><span>${enemy ? "Wild opponent" : keeper ? "Keeper" : "Party pet"}</span><b>${escapeHtml(keeper ? entry.combatStyle : species.affinity)}</b></div>
-      <div class="fighter-portrait">${keeper ? `<div class="keeper-combat-avatar">K</div>` : `<img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(entry.name)}" decoding="async" />`}</div>
-      <div class="fighter-name"><strong>${escapeHtml(entry.name)}</strong><span>Lv ${entry.level || 1} · ${escapeHtml(entry.ability || species?.ability?.name || "Ability")}</span></div>
-      <div class="bar-label"><span>Health</span><b data-hp-text="${entry.id}">${formatNumber(hp)} / ${formatNumber(entry.maxHp)}</b></div>
-      <div class="health-bar"><span id="hp-${entry.id}" style="width:${Math.max(0, hp / entry.maxHp * 100)}%"></span></div>
-      <div class="bar-label attack-label"><span>Next attack</span><b data-attack-time="${entry.id}">—</b></div>
-      <div class="attack-bar"><span data-attack-meter="${entry.id}"></span></div>
-    </div>`;
-  };
-  const region = REGIONS.find((entry) => entry.id === battle.regionId);
-  return `<div class="combat-header"><span class="battle-state live"><i></i> ${region ? `${escapeHtml(region.name)} encounter` : "Battle in progress"}</span><span class="battle-header-actions">Live fight</span></div>
-    <div class="combatants"><div class="team-side">${battle.team.map((entry) => fighter(entry)).join("")}</div><div class="versus-mark">VS</div><div class="enemy-side">${fighter(battle.enemy, true)}</div></div>
-    <div class="battle-feed"><div><span>Battle log</span><b>${battle.team.length} vs 1</b></div><ol id="battle-log">${playback.logs.slice(0, 5).map((entry) => `<li class="${entry.type}">${escapeHtml(entry.text)}</li>`).join("") || `<li class="muted-log">Attack timers are charging…</li>`}</ol></div>`;
-}
-
-function clearBattleTimers() {
-  battleTimers.forEach(clearTimeout);
-  battleTimers = [];
-  activeBattle = null;
-}
-
-function playbackDuration(battle) {
-  return Math.min(COMBAT_MAX_PLAYBACK_MS, Math.max(COMBAT_MIN_PLAYBACK_MS, Number(battle.duration || 1)));
-}
-
-function beginBattle(battle, focusCombat = true) {
-  clearBattleTimers();
-  const totalDuration = playbackDuration(battle);
-  const scale = totalDuration / Math.max(1, Number(battle.duration || 1));
-  const fighters = [...battle.team, battle.enemy];
-  activeBattle = {
-    battle,
-    scale,
-    totalDuration,
-    startedAt: Date.now() + 900,
-    hp: Object.fromEntries(fighters.map((entry) => [entry.id, Number(entry.startingHp ?? entry.maxHp)])),
-    lastAttackAt: Object.fromEntries(fighters.map((entry) => [entry.id, 0])),
-    logs: [],
-    ending: false,
-  };
-  renderShell();
-  if (focusCombat || currentPanel === "combat") {
-    currentPanel = "combat";
-    renderCombat();
-    if (focusCombat) panel.scrollTop = 0;
-  }
-  for (const event of battle.events) {
-    const timer = setTimeout(() => applyBattleEvent(event), Math.max(0, 900 + event.time * scale));
-    battleTimers.push(timer);
-  }
-}
-
-function applyBattleEvent(event) {
-  if (!activeBattle) return;
-  if (event.type === "hit") {
-    playSound(event.critical ? "critical" : event.ability ? "ability" : event.sourceId === activeBattle.battle.enemy.id ? "enemyAttack" : "attack");
-    activeBattle.hp[event.targetId] = event.targetHp;
-    activeBattle.lastAttackAt[event.sourceId] = Number(event.time || 0) * activeBattle.scale;
-    const sourceName = battleFighterName(event.sourceId);
-    const targetName = battleFighterName(event.targetId);
-    const description = event.ability
-      ? `${sourceName} used ${event.ability} on ${targetName} for ${event.amount}.`
-      : `${sourceName} hit ${targetName} for ${event.amount}${event.critical ? " — critical!" : "."}`;
-    addBattleLog(description, event.critical ? "critical" : event.strong ? "strong" : "hit");
-    const source = $(`#fighter-${CSS.escape(event.sourceId)}`);
-    const target = $(`#fighter-${CSS.escape(event.targetId)}`);
-    target?.classList.add("hit");
-    source?.querySelector(".attack-bar")?.classList.add("fired");
-    setTimeout(() => { target?.classList.remove("hit"); source?.querySelector(".attack-bar")?.classList.remove("fired"); }, 260);
-    const hp = $(`#hp-${CSS.escape(event.targetId)}`);
-    if (hp) hp.style.width = `${Math.max(0, event.targetHp / event.targetMaxHp * 100)}%`;
-    const hpText = document.querySelector(`[data-hp-text="${CSS.escape(event.targetId)}"]`);
-    if (hpText) hpText.textContent = `${formatNumber(event.targetHp)} / ${formatNumber(event.targetMaxHp)}`;
-    if (event.targetHp <= 0) target?.classList.add("defeated");
-    floatNumber(target, `-${event.amount}`, event.critical ? "critical" : event.strong ? "strong" : "", event.critical ? "CRIT" : event.ability || "");
-    if (event.ability) showBattleMessage(event.ability);
-  } else if (event.type === "heal") {
-    playSound("heal");
-    activeBattle.hp[event.targetId] = event.targetHp;
-    const sourceName = battleFighterName(event.sourceId || event.targetId);
-    const targetName = battleFighterName(event.targetId);
-    addBattleLog(event.ability ? `${sourceName} used ${event.ability}, healing ${targetName} for ${event.amount}.` : `${targetName} ate ${inventoryName(event.mealId)} and healed ${event.amount}.`, "heal");
-    const target = $(`#fighter-${CSS.escape(event.targetId)}`);
-    const hp = $(`#hp-${CSS.escape(event.targetId)}`);
-    if (hp) hp.style.width = `${Math.max(0, event.targetHp / event.targetMaxHp * 100)}%`;
-    const hpText = document.querySelector(`[data-hp-text="${CSS.escape(event.targetId)}"]`);
-    if (hpText) hpText.textContent = `${formatNumber(event.targetHp)} / ${formatNumber(event.targetMaxHp)}`;
-    floatNumber(target, `+${event.amount}`, "heal", event.ability || "MEAL");
-    if (event.ability) showBattleMessage(event.ability);
-  } else if (event.type === "start") {
-    playSound("nav");
-    addBattleLog("The hunt began. Attack timers are charging.", "start");
-  } else if (event.type === "end") {
-    if (activeBattle.ending) return;
-    activeBattle.ending = true;
-    const harvested = Boolean(activeBattle.battle.autoHarvested);
-    addBattleLog(event.victory ? harvested ? "Victory! The enemy was sent to Processing." : "Victory! A capture decision is ready." : "The party withdrew safely.", event.victory ? "victory" : "retreat");
-    showBattleMessage(event.victory ? harvested ? "Victory — sent to Processing" : "Victory — capture decision ready" : "Party withdrew safely");
-    const timer = setTimeout(() => finishBattlePlayback(event.victory), 2200);
-    battleTimers.push(timer);
-  }
-  updateBattleClock();
-}
-
-function battleFighterName(id) {
-  if (!activeBattle) return "A combatant";
-  return [...activeBattle.battle.team, activeBattle.battle.enemy].find((entry) => entry.id === id)?.name || "A combatant";
-}
-
-function addBattleLog(text, type = "hit") {
-  if (!activeBattle) return;
-  activeBattle.logs.unshift({ text, type });
-  const log = $("#battle-log");
-  if (log) log.innerHTML = activeBattle.logs.slice(0, 5).map((entry) => `<li class="${entry.type}">${escapeHtml(entry.text)}</li>`).join("");
-}
-
-function finishBattlePlayback(victory) {
-  const battle = activeBattle?.battle;
-  battleTimers.forEach(clearTimeout);
-  battleTimers = [];
-  activeBattle = null;
-  renderShell();
-  playSound(victory ? "victory" : "defeat");
-  if (!victory) continuousCombatEnabled = false;
-  if (currentPanel === "combat") renderCombat();
-  if (victory && continuousCombatEnabled && !gameState.pendingEncounter) {
-    clearTimeout(continuousCombatNextTimer);
-    continuousCombatNextTimer = setTimeout(() => fightNextEncounter(currentPanel === "combat"), COMBAT_RESTART_DELAY_MS);
-  } else if (victory && continuousCombatEnabled && currentPanel !== "combat") {
-    parkCombatForIdle();
-  }
-  toast(victory ? "Battle won." : "Party withdrew.", "info", victory ? battle?.autoHarvested ? "Next fight starting." : "Choose a capture meal or send the pet to Processing." : "Heal any downed fighters and restart when ready.");
-}
-
-function formatCombatClock(milliseconds) {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
-}
-
-function updateBattleClock() {
-  if (!activeBattle) return;
-  const elapsed = Math.max(0, Date.now() - activeBattle.startedAt);
-  const clock = $("[data-battle-time]");
-  if (clock) clock.textContent = `${formatCombatClock(Math.min(elapsed, activeBattle.totalDuration))} / ${formatCombatClock(activeBattle.totalDuration)}`;
-  for (const entry of [...activeBattle.battle.team, activeBattle.battle.enemy]) {
-    const meter = document.querySelector(`[data-attack-meter="${CSS.escape(entry.id)}"]`);
-    const time = document.querySelector(`[data-attack-time="${CSS.escape(entry.id)}"]`);
-    const hp = Number(activeBattle.hp[entry.id] ?? entry.maxHp);
-    if (hp <= 0 || activeBattle.ending) {
-      if (meter) meter.style.width = "0%";
-      if (time) time.textContent = hp <= 0 ? "Defeated" : "Complete";
-      continue;
-    }
-    const interval = Math.max(1, Number(entry.attackInterval || 2200) * activeBattle.scale);
-    const lastAttack = Number(activeBattle.lastAttackAt[entry.id] || 0);
-    const since = Math.max(0, elapsed - lastAttack);
-    const cycle = Math.min(interval, since);
-    const remaining = Math.max(0, interval - cycle);
-    if (meter) meter.style.width = `${Math.min(100, cycle / interval * 100)}%`;
-    if (time) time.textContent = `${(remaining / 1000).toFixed(1)}s`;
-  }
-}
-
-function floatNumber(target, value, className, label = "") {
-  if (!target) return;
-  const node = document.createElement("span");
-  node.className = `damage-number ${className}`;
-  node.innerHTML = `<strong>${escapeHtml(value)}</strong>${label ? `<small>${escapeHtml(label)}</small>` : ""}`;
-  target.querySelector(".fighter-portrait")?.append(node);
-  setTimeout(() => node.remove(), 850);
-}
-
-function showBattleMessage(text) {
-  const stage = $("#combat-stage");
-  if (!stage) return;
-  stage.querySelector(".battle-message")?.remove();
-  const node = document.createElement("div");
-  node.className = "battle-message";
-  node.textContent = text;
-  stage.append(node);
-  setTimeout(() => node.remove(), 1000);
-}
-
-function renderDungeons() {
-  panel.innerHTML = `${panelHeading("Asynchronous expeditions", "Dungeons", "Dungeon pets do not consume the six normal assignment slots, but each expedition pet remains unavailable until the run returns.")}
-    ${gameState.dungeonRuns.length ? `<div class="card card-pad" style="margin-bottom:1rem"><p class="eyebrow">Underway</p><div class="assignment-list">${gameState.dungeonRuns.map((run) => { const dungeon = DUNGEONS.find((entry) => entry.id === run.dungeonId); const ready = run.endAt <= Date.now(); return `<div class="assignment" data-live-dungeon="${run.id}"><div class="assignment-head"><strong>${escapeHtml(dungeon.name)}</strong><small data-dungeon-time>${ready ? "Ready to claim" : formatTime(run.endAt - Date.now())}</small></div><div class="progress"><span style="width:${Math.min(100, (Date.now() - run.startedAt) / (run.endAt - run.startedAt) * 100)}%"></span></div><button class="button compact ${ready ? "primary" : "ghost"}" data-action="claim-dungeon" data-id="${run.id}" ${ready ? "" : "disabled"} type="button">${ready ? "Claim result" : `${Math.round(run.chance * 100)}% chance`}</button></div>`; }).join("")}</div></div>` : ""}
-    <div class="dungeon-grid">${DUNGEONS.map((dungeon) => {
-      const unlocked = skillLevel(gameState, "combat") >= dungeon.level;
-      return `<article class="dungeon-card card ${unlocked ? "" : "locked"}"><p class="eyebrow">Combat ${dungeon.level}</p><h3>${escapeHtml(dungeon.name)}</h3><p class="muted small-copy">${formatTime(dungeon.duration * 1000)} · Recommended power ${formatNumber(dungeon.recommendedPower)}</p><div class="cost-list"><span class="tag affinity" style="--affinity:${affinityColors[dungeon.favored]?.[0]}">${dungeon.favored} favored</span>${Object.entries(dungeon.entry).map(([id, amount]) => `<span class="tag">${amount} ${escapeHtml(inventoryName(id))}</span>`).join("")}</div><p class="small-copy">Success grants full rewards. Failure returns a partial cache. A rare success may reveal a capture encounter.</p><button class="button ${unlocked ? "primary" : "ghost"}" data-action="open-dungeon" data-id="${dungeon.id}" ${unlocked ? "" : "disabled"} type="button">${unlocked ? "Prepare party" : `Locked at Combat ${dungeon.level}`}</button></article>`;
-    }).join("")}</div>`;
-}
-
-function renderMarket() {
-  const listings = marketListings.length ? marketListings : localSeedListings();
-  panel.innerHTML = `${panelHeading("Unlimited pet trading", "Marketplace", "Pets may change hands any number of times. Sellers pay a 2% listing fee, with a minimum charge of five coins.", `<span class="tag">${mode === "firebase" ? "Live shared listings" : "Private preview listings"}</span>`)}
-    <div class="market-grid">${listings.map((listing) => {
-      const species = SPECIES_BY_ID[listing.speciesId || listing.pet?.speciesId];
-      const own = (mode === "firebase" && currentUser && listing.sellerUid === currentUser.uid) || (mode === "local" && listing.sellerUid === "local");
-      return `<article class="market-card card">${petVisual(species)}<p class="eyebrow" style="margin-top:.8rem">${escapeHtml(species.acquisition)} · ${listing.pet?.stars || 1}/5 stars</p><h3>${escapeHtml(species.name)}</h3><p class="muted small-copy">Level ${listing.pet?.level || 1} · Seller ${escapeHtml(listing.sellerName || "Keeper")}</p><div class="chance-display"><span>Price</span><strong>${formatNumber(listing.price)} coins</strong></div>${own ? `<button class="button secondary wide" data-action="cancel-listing" data-id="${listing.id}" type="button">Cancel listing</button>` : `<button class="button primary wide" data-action="buy-listing" data-id="${listing.id}" type="button">Buy pet</button>`}</article>`;
-    }).join("")}</div>`;
-}
-
-function localSeedListings() {
-  if (!marketListings.length && mode === "local") {
-    const hare = createPetInstance("moss-hare", "local-market");
-    const boar = createPetInstance("stoneback-boar", "local-market");
-    marketListings = [
-      { id: "local-hare", sellerUid: "test-keeper-a", sellerName: "Field Keeper", speciesId: hare.speciesId, pet: hare, price: 90, createdAt: Date.now() - 40000 },
-      { id: "local-boar", sellerUid: "test-keeper-b", sellerName: "Hill Keeper", speciesId: boar.speciesId, pet: boar, price: 140, createdAt: Date.now() - 80000 },
-    ];
-  }
-  return marketListings;
-}
-
-function renderCollection() {
-  panel.innerHTML = `${panelHeading("Fifty launch species", "Pet Collection", `${gameState.discoveries.length} of ${PET_SPECIES.length} species discovered. All species can fight; aptitude and stat profiles determine their specialties.`)}
-    ${REGIONS.map((region) => `<section style="margin-bottom:1.4rem"><div class="section-heading compact-heading"><div><p class="eyebrow">${region.skillBand}</p><h2>${escapeHtml(region.name)}</h2></div><span class="tag">${PET_SPECIES.filter((pet) => pet.region === region.id).length} species</span></div><div class="collection-grid">${PET_SPECIES.filter((pet) => pet.region === region.id).map((species) => { const found = gameState.discoveries.includes(species.id); const art = species.art || PLACEHOLDER_ART; return `<article class="collection-card ${found ? "" : "undiscovered"}"><div class="collection-visual" style="--affinity-soft:${affinityColors[species.affinity]?.[1]}"><img src="${escapeHtml(art)}" alt="${found ? escapeHtml(species.name) : ""}" loading="lazy" decoding="async" /></div><div class="collection-copy"><h3>${found ? escapeHtml(species.name) : "Undiscovered"}</h3><p>${found ? `${species.affinity} · ${species.acquisition}` : `${region.name} species`}</p></div></article>`; }).join("")}</div></section>`).join("")}`;
-}
-
-function ownedMeals() {
-  return Object.entries(gameState.inventory).filter(([id, quantity]) => ITEMS[id]?.category === "meal" && Number(quantity) > 0);
-}
-
-function durationPickerMarkup(name = "idle-duration", selected = 2) {
-  const durations = [1, 2, 4, 8, 12, 24];
-  return `<fieldset class="duration-field"><legend>Session length</legend><div class="duration-picker">${durations.map((hours) => `<label><input type="radio" name="${escapeHtml(name)}" value="${hours}" ${hours === selected ? "checked" : ""}/><span>${hours}h</span></label>`).join("")}</div><small>This is a saved end time. You can close the game and return later.</small></fieldset>`;
-}
-
-function processingDisplayDuration(pet) {
-  const aptitude = Math.max(1, Math.min(10, Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes.processing || 1)));
-  return Math.max(10000, Math.round(10000 * Math.pow(10 / aptitude, 0.55)));
-}
-
-function openProcessingShiftModal() {
-  const idle = gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0);
-  modalContent.innerHTML = `<p class="eyebrow">Persistent Processing</p><h2>Assign a queue worker</h2><p class="muted">This pet keeps processing the oldest available remains until the saved return time. It can work while other pets patrol, gather, craft, or build.</p>
-    <label class="field">Pet<select id="processing-shift-pet">${idle.map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; const aptitude = species.aptitudes.processing || 1; return `<option value="${pet.id}">${escapeHtml(pet.customName || species.name)} · Processing ${aptitude} · about ${formatTime(processingDisplayDuration(pet))} per remain</option>`; }).join("")}</select></label>
-    ${durationPickerMarkup("processing-shift-duration")}
-    <div class="notice">The worker waits safely when the queue is empty. It stops at the selected time, if storage fills, or when you call it back.</div>
-    <button class="button primary wide" id="confirm-processing-shift" ${idle.length ? "" : "disabled"} style="margin-top:.9rem" type="button">Start Processing shift</button>`;
-  $("#confirm-processing-shift", modalContent)?.addEventListener("click", async () => {
-    const petId = $("#processing-shift-pet", modalContent)?.value;
-    const durationHours = Number($("input[name='processing-shift-duration']:checked", modalContent)?.value || 2);
-    modal.close();
-    await runAction("startProcessingShift", { petId, durationHours });
-  });
-  modal.showModal();
-}
-
-function openStartModal(kind, id) {
-  const task = kind === "activity" ? ACTIVITIES.find((entry) => entry.id === id) : kind === "recipe" ? RECIPES.find((entry) => entry.id === id) : kind === "construction" ? BUILDINGS.find((entry) => entry.id === id) : gameState.remains.find((entry) => entry.id === id);
-  const skill = kind === "processing" ? "processing" : kind === "construction" ? "construction" : task.skill;
-  const idle = gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0);
-  modalContent.innerHTML = `<p class="eyebrow">Assign ${escapeHtml(skill)} pet</p><h2>${escapeHtml(kind === "processing" ? SPECIES_BY_ID[task.speciesId].name : task.name)}</h2><p class="muted">The selected pet occupies one of six active slots. Any pet may try; its 1–10 ${escapeHtml(skill)} aptitude determines speed and yield.</p>
-    <label class="field">Pet<select id="modal-pet-select">${idle.map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; return `<option value="${pet.id}">${escapeHtml(species.name)} · Aptitude ${species.aptitudes[skill] || 1} · Level ${pet.level} · HP ${pet.currentHp}/${scaledPetStats(pet).hp}</option>`; }).join("")}</select></label>
-    ${kind === "activity" ? durationPickerMarkup("pet-idle-duration") : `<div class="notice" style="margin-top:.8rem">This is a one-time job. It completes offline and never consumes food.</div>`}
-    <div class="modal-actions"><button class="button primary" id="confirm-start" ${!idle.length ? "disabled" : ""} type="button">Start assignment</button></div>`;
-  $("#confirm-start", modalContent)?.addEventListener("click", async () => {
-    const petId = $("#modal-pet-select", modalContent).value;
-    const durationHours = Number($("input[name='pet-idle-duration']:checked", modalContent)?.value || 2);
-    modal.close();
-    if (kind === "activity") await runAction("startActivity", { petId, activityId: id, durationHours });
-    if (kind === "recipe") await runAction("startRecipe", { petId, recipeId: id });
-    if (kind === "construction") await runAction("startConstruction", { petId, buildingId: id });
-    if (kind === "processing") await runAction("startProcessing", { petId, remainId: id });
-  });
-  modal.showModal();
-}
-
-function openKeeperActivityModal(activityId) {
-  const task = ACTIVITIES.find((entry) => entry.id === activityId);
-  if (!task) return;
-  modalContent.innerHTML = `<p class="eyebrow">Keeper work session</p><h2>${escapeHtml(task.name)}</h2><p class="muted">Your Keeper repeats this action until the chosen end time. The session continues after the browser closes and uses no food.</p>${durationPickerMarkup("keeper-idle-duration")}<div class="notice">One action takes about ${formatTime(keeperDisplayDuration(task))} with the current equipment.</div><button class="button primary wide" id="confirm-keeper-start" style="margin-top:.9rem" type="button">Start Keeper session</button>`;
-  $("#confirm-keeper-start", modalContent).addEventListener("click", async () => {
-    const durationHours = Number($("input[name='keeper-idle-duration']:checked", modalContent)?.value || 2);
-    modal.close();
-    await runAction("startKeeperActivity", { activityId, durationHours });
-  });
-  modal.showModal();
-}
-
-function openPetHealModal(petId) {
-  const pet = gameState.pets.find((entry) => entry.id === petId);
-  if (!pet) return;
-  const species = SPECIES_BY_ID[pet.speciesId];
-  const maxHp = scaledPetStats(pet).hp;
-  const healingItems = Object.entries(gameState.inventory).filter(([id, quantity]) => Number(quantity) > 0 && Number(ITEMS[id]?.heal || 0) > 0);
-  modalContent.innerHTML = `<p class="eyebrow">Downed pet</p><h2>Heal ${escapeHtml(pet.customName || species.name)}</h2><p class="muted">${pet.currentHp}/${maxHp} HP. Downed pets can be healed immediately; they do not need to recover before receiving food or medicine.</p>${healingItems.length ? `<label class="field">Healing item<select id="pet-heal-item">${healingItems.map(([id, quantity]) => `<option value="${id}">${escapeHtml(inventoryName(id))} · +${ITEMS[id].heal} HP (${quantity})</option>`).join("")}</select></label><button class="button primary wide" id="confirm-pet-heal" style="margin-top:.8rem" type="button">Heal pet</button>` : `<div class="notice">You do not own a healing item yet. Wild Berries and other edible resources can be used directly when available.</div>`}`;
-  $("#confirm-pet-heal", modalContent)?.addEventListener("click", async () => { const itemId = $("#pet-heal-item", modalContent).value; modal.close(); await runAction("useHealingItem", { itemId, targetType: "pet", petId }); });
-  modal.showModal();
-}
-
-function openHealModal(itemId) {
-  const item = ITEMS[itemId];
-  const injuredPets = gameState.pets.filter((pet) => Number(pet.currentHp || 0) < scaledPetStats(pet).hp && !petIsInLiveBattle(pet.id));
-  const keeper = keeperStats(gameState);
-  modalContent.innerHTML = `<p class="eyebrow">Use ${escapeHtml(item.name)}</p><h2>Restore combat health</h2><p class="muted">Food and medicine heal immediately. Everyone also recovers 1% maximum health per idle hour; downed pets are never lost.</p><label class="field">Target<select id="heal-target"><option value="keeper">Keeper · ${gameState.profile.currentHp}/${keeper.maxHp} HP</option>${injuredPets.map((pet) => `<option value="${pet.id}">${escapeHtml(pet.customName || SPECIES_BY_ID[pet.speciesId].name)} · ${pet.currentHp}/${scaledPetStats(pet).hp} HP</option>`).join("")}</select></label><button class="button primary wide" id="confirm-heal" style="margin-top:.8rem" type="button">Use ${escapeHtml(item.name)}</button>`;
-  $("#confirm-heal", modalContent).addEventListener("click", async () => { const target = $("#heal-target", modalContent).value; modal.close(); await runAction("useHealingItem", { itemId, targetType: target === "keeper" ? "keeper" : "pet", petId: target === "keeper" ? "" : target }); });
-  modal.showModal();
-}
-
-function openItemDetails(itemId) {
-  const item = ITEMS[itemId] || { name: inventoryName(itemId), category: "item" };
-  const quantity = Number(gameState.inventory[itemId] || 0);
-  const equipped = Object.values(gameState.equipment || {}).includes(itemId);
-  const stats = [["Attack", item.attack], ["Defence", item.defense], ["Health", item.hp], ["Speed", item.speed], ["Heal", item.heal], ["Capture", item.captureBonus ? `${Math.round(item.captureBonus * 100)}%` : 0]].filter(([, value]) => value);
-  modalContent.innerHTML = `<div class="item-detail-modal"><div class="item-detail-hero item-${escapeHtml(item.category || "item")}">${itemIconMarkup(item)}<span>${escapeHtml(item.category || "item")}</span></div><div><p class="eyebrow">Stored item</p><h2>${escapeHtml(item.name)}</h2><p class="muted">Quantity ${formatNumber(quantity)}${equipped ? " · Currently equipped" : ""}</p><div class="cost-list">${stats.map(([label, value]) => `<span class="tag">${label} +${value}</span>`).join("") || `<span class="tag">Crafting material</span>`}</div><div class="modal-actions">${item.slot ? `<button class="button primary" data-modal-item-action="equip" type="button">${equipped ? "Equipped" : "Equip item"}</button>` : ""}${Number(item.heal || 0) ? `<button class="button secondary" data-modal-item-action="heal" type="button">Use to heal</button>` : ""}</div></div></div>`;
-  $("[data-modal-item-action='equip']", modalContent)?.addEventListener("click", async () => { modal.close(); await runAction("equipItem", { itemId }); });
-  $("[data-modal-item-action='heal']", modalContent)?.addEventListener("click", () => { modal.close(); openHealModal(itemId); });
-  modal.showModal();
-}
-
-function openPetDetails(petId, manage = false) {
-  const pet = gameState.pets.find((entry) => entry.id === petId);
-  if (!pet) return;
-  if (manage && petIsInLiveBattle(petId)) {
-    manage = false;
-    toast("That pet is currently fighting.", "info", "Management actions unlock when the battle ends.");
-  }
-  const species = SPECIES_BY_ID[pet.speciesId];
-  const stats = scaledPetStats(pet);
-  const abilityRole = species.ability.kind === "heal-team" ? "Team heal" : species.ability.kind === "heal-self" ? "Self heal" : `${Math.round(species.ability.power * 100)}% damage`;
-  modalContent.innerHTML = `<div class="modal-pet">${petVisual(species)}<div><p class="eyebrow">${species.acquisition} · ${species.affinity}</p><h2>${escapeHtml(pet.customName || species.name)}</h2><p class="star-row">${pet.stars}/5 stars · Level ${pet.level}/${levelCapForStars(pet.stars)}</p><p class="muted small-copy">${escapeHtml(species.ability.name)} — ${escapeHtml(abilityRole)}, every ${species.ability.cooldown} attacks. ${escapeHtml(species.passive.name)}: ${escapeHtml(species.passive.description)}</p><div class="inventory-grid"><div class="inventory-item"><span>Health</span><strong>${pet.currentHp}/${stats.hp}</strong></div><div class="inventory-item"><span>Attack</span><strong>${stats.attack}</strong></div><div class="inventory-item"><span>Defence</span><strong>${stats.defense}</strong></div><div class="inventory-item"><span>Speed</span><strong>${stats.speed}</strong></div></div></div></div>
-    <div class="split-line"></div><p class="eyebrow">Aptitudes</p><div class="cost-list">${Object.entries(species.aptitudes).sort((a,b) => b[1]-a[1]).map(([skill, rating]) => `<span class="tag">${escapeHtml(skill)} ${rating}</span>`).join("")}<span class="tag">Unlisted skills 1</span></div>
-    ${manage ? `<div class="split-line"></div><div class="grid two"><div><h3>Sacrifice for XP</h3><p class="muted small-copy">Choose an idle recipient. Low-level common pets become extremely inefficient for high-level recipients.</p><select id="sacrifice-recipient" class="inline-select">${gameState.pets.filter((entry) => entry.id !== pet.id && entry.status === "idle" && !petIsInLiveBattle(entry.id)).map((entry) => `<option value="${entry.id}">${escapeHtml(SPECIES_BY_ID[entry.speciesId].name)} · Level ${entry.level}</option>`).join("")}</select><button class="button danger wide" style="margin-top:.5rem" data-modal-action="sacrifice" type="button">Sacrifice this pet</button></div><div><h3>Condense</h3><p class="muted small-copy">Two identical max-level pets become one ${Math.min(5, pet.stars + 1)}-star level 1 pet with a ${pet.stars * 10}% base-stat bonus and a level ${Math.min(100, (pet.stars + 1) * 20)} ceiling.</p><select id="condense-duplicate" class="inline-select">${gameState.pets.filter((entry) => entry.id !== pet.id && entry.speciesId === pet.speciesId && entry.stars === pet.stars && entry.status === "idle" && !petIsInLiveBattle(entry.id)).map((entry) => `<option value="${entry.id}">${escapeHtml(species.name)} · Level ${entry.level}</option>`).join("")}</select><button class="button secondary wide" style="margin-top:.5rem" data-modal-action="condense" type="button">Condense pair</button></div></div><div class="split-line"></div><h3>Marketplace listing</h3><div class="combat-controls"><label class="field">Price in coins<input id="listing-price" type="number" min="10" value="100" /></label><button class="button secondary" data-modal-action="list" type="button">List pet</button></div>` : ""}`;
-  if (manage) {
-    $("[data-modal-action='sacrifice']", modalContent)?.addEventListener("click", async () => { const recipientId = $("#sacrifice-recipient", modalContent)?.value; if (!recipientId) return toast("Choose a recipient.", "error"); if (!confirm("Sacrifice this pet permanently for XP?")) return; modal.close(); await runAction("sacrificePet", { donorId: pet.id, recipientId }); });
-    $("[data-modal-action='condense']", modalContent)?.addEventListener("click", async () => { const duplicateId = $("#condense-duplicate", modalContent)?.value; if (!duplicateId) return toast("No eligible duplicate is available.", "error"); modal.close(); await runAction("condensePets", { primaryId: pet.id, duplicateId }); });
-    $("[data-modal-action='list']", modalContent)?.addEventListener("click", async () => { const price = Number($("#listing-price", modalContent)?.value); modal.close(); await listPetAction(pet.id, price); });
-  }
-  modal.showModal();
-}
-
-function openDungeonModal(dungeonId) {
-  const dungeon = DUNGEONS.find((entry) => entry.id === dungeonId);
-  selectedDungeonPets = new Set();
-  const idle = gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0);
-  modalContent.innerHTML = `<p class="eyebrow">Dungeon party</p><h2>${escapeHtml(dungeon.name)}</h2><p class="muted">Choose up to three idle pets. ${dungeon.favored} pets each add an 8-point affinity bonus to success chance.</p><div class="check-list" id="dungeon-pet-list">${idle.map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; return `<label class="check-option"><input type="checkbox" value="${pet.id}"/><span>${escapeHtml(species.name)}<small>${species.affinity} · Level ${pet.level}</small></span><strong>${formatNumber(scaledPetStats(pet).power)}</strong></label>`; }).join("")}</div><div class="chance-display"><span>Calculated chance</span><strong id="dungeon-chance">8%</strong></div><button class="button primary wide" id="confirm-dungeon" type="button">Send expedition</button>`;
-  $("#dungeon-pet-list", modalContent).addEventListener("change", (event) => {
-    if (!event.target.matches("input")) return;
-    if (event.target.checked && selectedDungeonPets.size >= MAX_COMBAT_PETS) { event.target.checked = false; return toast(`Choose no more than ${MAX_COMBAT_PETS} pets.`, "error"); }
-    if (event.target.checked) selectedDungeonPets.add(event.target.value);
-    else selectedDungeonPets.delete(event.target.value);
-    const odds = dungeonChance(gameState, dungeonId, [...selectedDungeonPets]);
-    $("#dungeon-chance", modalContent).textContent = `${Math.round(odds.chance * 100)}%`;
-  });
-  $("#confirm-dungeon", modalContent).addEventListener("click", async () => { modal.close(); await runAction("startDungeon", { dungeonId, petIds: [...selectedDungeonPets] }); });
-  modal.showModal();
-}
-
-async function runAction(action, payload = {}) {
-  try {
-    if (mode === "firebase") {
-      const result = await firebase.gameAction(action, payload);
-      if (result.state) setState(result.state, !["resolveCombat", "resolveAreaCombat"].includes(action));
-      if (result.capture) { playSound(result.capture.success ? "success" : "loot"); toast(result.capture.success ? "Capture successful." : "Capture failed; remains added to Processing."); }
-      if (result.result?.success !== undefined) { playSound(result.result.success ? "success" : "loot"); toast(result.result.success ? "Dungeon cleared." : "Dungeon returned with partial rewards."); }
-      return result;
-    }
-    let result;
-    if (action === "startActivity") result = { state: startActivity(gameState, payload) };
-    else if (action === "startKeeperActivity") result = { state: startKeeperActivity(gameState, payload) };
-    else if (action === "startKeeperRecipe") result = { state: startKeeperRecipe(gameState, payload) };
-    else if (action === "startKeeperConstruction") result = { state: startKeeperConstruction(gameState, payload) };
-    else if (action === "startKeeperProcessing") result = { state: startKeeperProcessing(gameState, payload) };
-    else if (action === "startRecipe") result = { state: startRecipe(gameState, payload) };
-    else if (action === "startConstruction") result = { state: startConstruction(gameState, payload) };
-    else if (action === "startProcessing") result = { state: startProcessing(gameState, payload) };
-    else if (action === "startProcessingShift") result = { state: startProcessingShift(gameState, payload) };
-    else if (action === "startCombatPatrol") result = { state: startCombatPatrol(gameState, payload) };
-    else if (action === "stopActivity") result = { state: stopActivity(gameState, payload.activityId) };
-    else if (action === "stopCombatPatrol") result = { state: stopCombatPatrol(gameState) };
-    else if (action === "stopKeeperActivity") result = { state: stopKeeperActivity(gameState) };
-    else if (action === "equipItem") result = { state: equipItem(gameState, payload.itemId) };
-    else if (action === "buyStoreItem") result = { state: buyStoreItem(gameState, payload) };
-    else if (action === "useHealingItem") result = useHealingItem(gameState, payload);
-    else if (action === "resolveCombat") result = resolveCombat(gameState, payload);
-    else if (action === "resolveAreaCombat") result = resolveAreaCombat(gameState, payload);
-    else if (action === "attemptCapture") result = attemptCapture(gameState, payload.mealId);
-    else if (action === "declineCapture") result = { state: declineCapture(gameState) };
-    else if (action === "sacrificePet") result = sacrificePet(gameState, payload);
-    else if (action === "condensePets") result = { state: condensePets(gameState, payload) };
-    else if (action === "startDungeon") result = { state: startDungeon(gameState, payload) };
-    else if (action === "claimDungeon") result = claimDungeon(gameState, payload.runId);
-    else throw new GameError("Unknown action.");
-    if (result.state) setState(result.state, !["resolveCombat", "resolveAreaCombat"].includes(action));
-    return result;
-  } catch (error) {
-    reportError(error);
-    return null;
-  }
-}
-
-async function listPetAction(petId, price) {
-  try {
-    if (mode === "firebase") {
-      const result = await firebase.listPet(petId, price);
-      if (result.state) setState(result.state);
-      toast("Pet listed.", "info", `${formatNumber(result.listing?.fee)} coin fee paid.`);
-    } else {
-      const result = prepareMarketListing(gameState, { petId, price });
-      setState(result.state);
-      marketListings.unshift({ id: `local-own-${Date.now()}`, sellerUid: "local", sellerName: gameState.profile.displayName, speciesId: result.listing.speciesId, ...result.listing });
-    toast("Preview listing created.");
-    }
-  } catch (error) { reportError(error); }
-}
-
-async function buyListingAction(listingId) {
-  try {
-    if (mode === "firebase") {
-      const result = await firebase.buyPet(listingId);
-      if (result.state) setState(result.state);
-      toast("Pet purchased.");
-      return;
-    }
-    const listing = marketListings.find((entry) => entry.id === listingId);
-    if (!listing) throw new GameError("Listing no longer exists.");
-    if (listing.sellerUid === "local") throw new GameError("You cannot buy your own listing.");
-    setState(receiveMarketPet(gameState, listing.pet, listing.price));
-    marketListings = marketListings.filter((entry) => entry.id !== listingId);
-    toast("Pet purchased in the private preview.");
-  } catch (error) { reportError(error); }
-}
-
-async function cancelListingAction(listingId) {
-  try {
-    if (mode === "firebase") {
-      const result = await firebase.cancelListing(listingId);
-      if (result.state) setState(result.state);
-      toast("Listing cancelled.");
-      return;
-    }
-    const listing = marketListings.find((entry) => entry.id === listingId && entry.sellerUid === "local");
-    if (!listing) throw new GameError("Listing not found.");
-    const next = restoreCancelledListing(gameState, listing.pet);
-    marketListings = marketListings.filter((entry) => entry.id !== listingId);
-    setState(next);
-  } catch (error) { reportError(error); }
-}
-
-async function fightNextEncounter(focusCombat = true) {
-  if (!continuousCombatEnabled || activeBattle || combatRequestInProgress || gameState.pendingEncounter || !continuousCombatRequest) return;
-  combatRequestInProgress = true;
-  try {
-    const result = await runAction("resolveAreaCombat", { ...continuousCombatRequest, autoHunt: true });
-    if (result?.battle) beginBattle(result.battle, focusCombat);
-    else continuousCombatEnabled = false;
-  } finally {
-    combatRequestInProgress = false;
-  }
-}
-
-async function startCombatAction() {
-  if (activeBattle || combatRequestInProgress) return;
-  continuousCombatRequest = {
-    petIds: [...selectedCombatPets],
-    regionId: selectedCombatRegion,
-    mealId: $("#combat-meal")?.value || "",
-    includeKeeper: Boolean($("#combat-keeper")?.checked),
-    combatStyle: $("#combat-style")?.value || "melee",
-    autoEat: Boolean($("#combat-auto-eat")?.checked),
-    autoHarvest: Boolean($("#combat-auto-harvest")?.checked),
-  };
-  if (!continuousCombatRequest.petIds.length && !continuousCombatRequest.includeKeeper) return toast("Choose at least one fighter.", "error");
-  writeCombatSetup({ autoEat: continuousCombatRequest.autoEat, autoHarvest: continuousCombatRequest.autoHarvest, includeKeeper: continuousCombatRequest.includeKeeper });
-  continuousCombatEnabled = true;
-  if (gameState.combatPatrol) await runAction("stopCombatPatrol");
-  renderCombat();
-  await fightNextEncounter(true);
-}
-
-async function stopContinuousCombat() {
-  continuousCombatEnabled = false;
-  continuousCombatRequest = null;
-  clearTimeout(continuousCombatNextTimer);
-  continuousCombatNextTimer = null;
-  selectedCombatPets.clear();
-  if (gameState.combatPatrol) await runAction("stopCombatPatrol");
-  if (currentPanel === "combat" && !activeBattle) renderCombat();
-}
-
-async function parkCombatForIdle() {
-  if (!continuousCombatEnabled || !continuousCombatRequest || gameState.combatPatrol || gameState.pendingEncounter) return;
-  try {
-    await runAction("startCombatPatrol", { ...continuousCombatRequest, durationHours: 24 });
-  } catch { /* runAction already reports actionable game errors */ }
-}
-
-async function resumeLiveCombatFromIdle() {
-  const run = gameState?.combatPatrol;
-  if (!run || combatRequestInProgress) return;
-  continuousCombatRequest = {
-    petIds: [...run.petIds], regionId: run.regionId, mealId: run.mealId || "", includeKeeper: Boolean(run.includeKeeper),
-    combatStyle: run.combatStyle || "melee", autoEat: run.autoEat !== false, autoHarvest: true,
-  };
-  selectedCombatPets = new Set(run.petIds);
-  selectedCombatRegion = run.regionId;
-  continuousCombatEnabled = true;
-  await runAction("stopCombatPatrol");
-  if (!activeBattle && !gameState.pendingEncounter) await fightNextEncounter(true);
-}
-
-function enterGame(nextMode, state) {
-  mode = nextMode;
-  $("#auth-view").hidden = true;
-  $("#game-view").hidden = false;
-  setState(state);
-  if (currentUser?.emailVerified === false) toast("Check your inbox to verify your email.");
-}
-
-function leaveGame() {
-  clearBattleTimers();
-  gameState = null;
-  mode = "auth";
-  loadedUserId = null;
-  $("#game-view").hidden = true;
-  $("#auth-view").hidden = false;
-}
-
-async function loadAuthenticatedUser(user, preferredName = "") {
-  if (!user || !firebase) return null;
-  currentUser = user;
-  if (loadedUserId === user.uid && mode === "firebase" && gameState) return { state: gameState };
-  if (authLoadPromise) return authLoadPromise;
-  authLoadPromise = (async () => {
-    const result = await firebase.initializePlayer(preferredName || user.displayName || "Keeper");
-    if (!result?.state) throw Object.assign(new Error("Your den did not return a save."), { code: "game/empty-save" });
-    loadedUserId = user.uid;
-    enterGame("firebase", result.state);
-    return result;
-  })();
-  try {
-    return await authLoadPromise;
-  } finally {
-    authLoadPromise = null;
-  }
-}
-
-async function initializeFirebase() {
-  try {
-    firebase = await connectFirebase({
-      onAuth: async (user) => {
-        currentUser = user;
-        if (!user) {
-          loadedUserId = null;
-          if (mode === "firebase") leaveGame();
-          return;
-        }
-        if (!firebase || authActionInProgress) return;
-        try {
-          await loadAuthenticatedUser(user);
-        } catch (error) { reportError(error); }
-      },
-      onState: (state) => {
-        if (!state || !currentUser) return;
-        if (mode !== "firebase") enterGame("firebase", state);
-        else if (activeBattle || combatRequestInProgress) { setState(state, false); renderShell(); }
-        else setState(state);
-      },
-      onMarket: (listings) => { marketListings = listings; if (currentPanel === "market") queueRender(); },
-      onLeaderboard: (entries) => { leaderboard = entries; if (currentPanel === "overview") queueRender(); },
-      onError: (error) => console.warn("Firebase listener", error),
-    });
-    const initialUser = await firebase.authReady;
-    if (initialUser && mode !== "firebase" && !authActionInProgress) await loadAuthenticatedUser(initialUser);
-  } catch (error) {
-    console.warn("Firebase unavailable.", error);
-    if (!previewEnabled) reportError(error);
-  }
-}
-
-function setAuthMode(nextMode) {
-  authMode = nextMode === "register" ? "register" : "signin";
-  $$('[data-auth-mode]').forEach((button) => {
-    const active = button.dataset.authMode === authMode;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-  });
-  const registering = authMode === "register";
-  $("#name-field").hidden = !registering;
-  $("#display-name").required = registering;
-  $("#password").autocomplete = registering ? "new-password" : "current-password";
-  $("#email-submit").textContent = registering ? "Create your den" : "Enter your den";
-  $("#reset-password").hidden = registering;
-}
-
-function setAuthBusy(busy, provider = "email") {
-  $("#email-submit").disabled = busy;
-  $("#google-signin").disabled = busy;
-  $("#reset-password").disabled = busy;
-  $$('[data-auth-mode]').forEach((button) => { button.disabled = busy; });
-  if (busy) $("#email-submit").textContent = provider === "google" ? "Opening Google…" : authMode === "register" ? "Creating your den…" : "Signing in…";
-  else $("#email-submit").textContent = authMode === "register" ? "Create your den" : "Enter your den";
-}
-
-function enterLocalPreview() {
-  const saved = localStorage.getItem(LOCAL_SAVE);
-  let state;
-  try { state = saved ? JSON.parse(saved) : createInitialState("Preview Keeper"); }
-  catch { state = createInitialState("Preview Keeper"); }
-  enterGame("local", settleState(state).state);
-}
-
-document.addEventListener("click", async (event) => {
-  const interactive = event.target.closest("button, [role='button'], a, select, input[type='checkbox']");
-  if (interactive && !event.target.closest("#sound-toggle")) playSound("click");
-  const panelJump = event.target.closest("[data-panel-jump]");
-  if (panelJump) {
-    playSound("nav");
-    const nextPanel = panelJump.dataset.panelJump;
-    if (currentPanel === "combat" && nextPanel !== "combat") await parkCombatForIdle();
-    currentPanel = nextPanel;
-    queueRender();
-    if (nextPanel === "combat" && gameState.combatPatrol) setTimeout(() => resumeLiveCombatFromIdle(), 0);
-    return;
-  }
-  const nav = event.target.closest("[data-panel]");
-  if (nav) {
-    playSound("nav");
-    const nextPanel = nav.dataset.panel;
-    if (currentPanel === "combat" && nextPanel !== "combat") await parkCombatForIdle();
-    currentPanel = nextPanel;
-    $("#sidebar").classList.remove("open");
-    queueRender();
-    if (nextPanel === "combat" && gameState.combatPatrol) setTimeout(() => resumeLiveCombatFromIdle(), 0);
-    return;
-  }
-  const regionButton = event.target.closest("[data-combat-region]");
-  if (regionButton) { selectedCombatRegion = regionButton.dataset.combatRegion; renderCombat(); return; }
-  const skillButton = event.target.closest("[data-skill]");
-  if (skillButton) { currentSkill = skillButton.dataset.skill; queueRender(); return; }
-  const filterButton = event.target.closest("[data-inventory-filter]");
-  if (filterButton) { inventoryFilter = filterButton.dataset.inventoryFilter; queueRender(); return; }
-  const action = event.target.closest("[data-action]");
-  if (!action) return;
-  const name = action.dataset.action;
-  if (name === "open-start") openStartModal(action.dataset.kind, action.dataset.id);
-  else if (name === "open-processing-shift") openProcessingShiftModal();
-  else if (name === "open-keeper-start") openKeeperActivityModal(action.dataset.id);
-  else if (name === "start-keeper-recipe") await runAction("startKeeperRecipe", { recipeId: action.dataset.id });
-  else if (name === "start-keeper-construction") await runAction("startKeeperConstruction", { buildingId: action.dataset.id });
-  else if (name === "start-keeper-processing") await runAction("startKeeperProcessing", { remainId: action.dataset.id });
-  else if (name === "pet-details") openPetDetails(action.dataset.petId, false);
-  else if (name === "pet-manage") openPetDetails(action.dataset.petId, true);
-  else if (name === "heal-pet") openPetHealModal(action.dataset.petId);
-  else if (name === "stop-assignment") await runAction("stopActivity", { activityId: action.dataset.id });
-  else if (name === "stop-keeper-assignment") await runAction("stopKeeperActivity");
-  else if (name === "equip-item") await runAction("equipItem", { itemId: action.dataset.id });
-  else if (name === "buy-store-item") await runAction("buyStoreItem", { itemId: action.dataset.id, quantity: 1 });
-  else if (name === "open-heal") openHealModal(action.dataset.id);
-  else if (name === "item-details") openItemDetails(action.dataset.id);
-  else if (name === "start-combat") await startCombatAction();
-  else if (name === "stop-continuous-combat") await stopContinuousCombat();
-  else if (name === "attempt-capture") await runAction("attemptCapture", { mealId: $("#capture-meal")?.value });
-  else if (name === "decline-capture") await runAction("declineCapture");
-  else if (name === "open-dungeon") openDungeonModal(action.dataset.id);
-  else if (name === "claim-dungeon") await runAction("claimDungeon", { runId: action.dataset.id });
-  else if (name === "buy-listing") await buyListingAction(action.dataset.id);
-  else if (name === "cancel-listing") await cancelListingAction(action.dataset.id);
-});
-
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden && continuousCombatEnabled && !gameState?.pendingEncounter) parkCombatForIdle();
-});
-
-document.addEventListener("change", (event) => {
-  if (event.target.matches("input[name='combat-pet']")) {
-    if (event.target.checked && selectedCombatPets.size >= MAX_COMBAT_PETS) { event.target.checked = false; return toast(`Combat parties can contain at most ${MAX_COMBAT_PETS} pets.`, "error"); }
-    if (event.target.checked) selectedCombatPets.add(event.target.value);
-    else selectedCombatPets.delete(event.target.value);
-  }
-  if (["combat-auto-eat", "combat-auto-harvest", "combat-keeper"].includes(event.target.id)) {
-    const saved = readCombatSetup();
-    const key = event.target.id === "combat-auto-eat" ? "autoEat" : event.target.id === "combat-auto-harvest" ? "autoHarvest" : "includeKeeper";
-    writeCombatSetup({ ...saved, [key]: Boolean(event.target.checked) });
-  }
-});
-
-$("#modal-close").addEventListener("click", () => modal.close());
-modal.addEventListener("click", (event) => { if (event.target === modal) modal.close(); });
-$("#mobile-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
-$("#sound-toggle").addEventListener("click", () => {
-  const on = toggleSound();
-  $("#sound-toggle").textContent = on ? "Sound On" : "Sound Off";
-  $("#sound-toggle").setAttribute("aria-pressed", String(on));
-});
-$("#account-action").addEventListener("click", async () => { if (mode === "firebase") await firebase.signOut(); else leaveGame(); });
-$$("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => setAuthMode(button.dataset.authMode)));
-
-$("#auth-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!firebase) return toast("The game service is still connecting.", "error", "Please wait a moment and try again.");
-  authActionInProgress = true;
-  setAuthBusy(true, "email");
-  try {
-    if (authMode === "register") {
-      const displayName = $("#display-name").value.trim();
-      const credential = await firebase.registerEmail($("#email").value.trim(), $("#password").value, displayName);
-      await loadAuthenticatedUser(credential.user, displayName);
-      toast(credential.verificationSent ? "Account created. Verification email sent." : "Account created.", "info", credential.verificationSent ? "" : "The verification email could not be sent, but your den is ready.");
-    } else {
-      const credential = await firebase.signInEmail($("#email").value.trim(), $("#password").value);
-      await loadAuthenticatedUser(credential.user);
-    }
-  } catch (error) {
-    reportError(error);
-  } finally {
-    authActionInProgress = false;
-    setAuthBusy(false);
-  }
-});
-$("#google-signin").addEventListener("click", async () => {
-  if (!firebase) return toast("The game service is still connecting.", "error", "Please wait a moment and try again.");
-  authActionInProgress = true;
-  setAuthBusy(true, "google");
-  try {
-    const credential = await firebase.signInGoogle();
-    await loadAuthenticatedUser(credential.user);
-  } catch (error) {
-    reportError(error);
-  } finally {
-    authActionInProgress = false;
-    setAuthBusy(false);
-  }
-});
-$("#reset-password").addEventListener("click", async () => { const email = $("#email").value.trim(); if (!email) return toast("Enter your email first.", "error"); try { await firebase.sendPasswordReset(email); toast("Password reset email sent."); } catch (error) { reportError(error); } });
-
-document.addEventListener("visibilitychange", async () => {
-  if (document.visibilityState !== "visible" || !gameState) return;
-  if (mode === "firebase") { try { const result = await firebase.syncGame(); if (result.state) setState(result.state); } catch (error) { reportError(error); } }
-  else setState(settleState(gameState).state);
-  if (currentPanel === "combat" && gameState.combatPatrol) await resumeLiveCombatFromIdle();
-});
-
-setInterval(async () => {
-  if (!gameState) return;
-  if (mode === "local") {
-    const settled = settleState(gameState);
-    setState(settled.state, false);
-    if (settled.events.length) {
-      renderShell();
-      if (currentPanel === "overview") queueRender();
-    } else {
-      updateLiveProgress();
-    }
-  }
-}, 1000);
-
-setInterval(async () => {
-  if (mode !== "firebase" || !gameState || !firebase) return;
-  try { const result = await firebase.syncGame(); if (result.state) setState(result.state); } catch (error) { console.warn(error); }
-}, 30000);
-
-// Visual timers stay smooth without creating additional Firestore writes.
-setInterval(updateLiveProgress, 150);
-
-$$('[data-version]').forEach((node) => { node.textContent = GAME_VERSION; });
-document.title = GAME_NAME;
-$("#sound-toggle").textContent = soundEnabled() ? "Sound On" : "Sound Off";
-$("#sound-toggle").setAttribute("aria-pressed", String(soundEnabled()));
-setAuthMode("signin");
-initializeFirebase();
-if (previewEnabled) enterLocalPreview();
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&state){state.lastSeenAt=Date.now();saveSoon();}});
+window.addEventListener('beforeunload',()=>{if(state)localStorage.setItem(LOCAL_KEY,JSON.stringify(state));});
+setInterval(()=>{
+  if(!state||$('#game').classList.contains('hidden'))return;
+  if(state.combat&&stateUi.screen==='combat'&&!document.hidden){state=advanceLive(state,Date.now());saveSoon();render();}
+  else if(Date.now()-stateUi.lastRender>900)render();
+},300);
+init();

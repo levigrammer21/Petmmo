@@ -1,17 +1,6 @@
 {
   "name": "wilderden",
-  "version": "0.8.0",
-  "private": true,
+  "version": "1.0.0",
   "type": "module",
-  "scripts": {
-    "test": "node --test engine.test.js",
-    "firebase:login": "firebase login",
-    "emulators": "firebase emulators:start",
-    "deploy:firestore": "firebase deploy --only firestore:rules,firestore:indexes",
-    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes",
-    "deploy:backend": "firebase deploy --only firestore:rules,firestore:indexes"
-  },
-  "devDependencies": {
-    "firebase-tools": "15.26.0"
-  }
+  "scripts": { "test": "node --test rebuild.test.js" }
 }

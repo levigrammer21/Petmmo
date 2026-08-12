@@ -1,76 +1,10 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function owns(uid) {
-      return signedIn() && request.auth.uid == uid;
-    }
-
-    // Each family member can read and update only their own complete game save.
-    // This keeps accounts private while allowing the game to run on Firebase's
-    // no-billing Spark plan without Cloud Functions.
-    match /players/{uid} {
-      allow read, create, update, delete: if owns(uid);
-    }
-
-    // Everyone signed in may see the shared ranking, but a player may publish
-    // only the leaderboard row that matches their own Firebase account.
-    match /leaderboards/{uid} {
-      allow read: if signedIn();
-      allow create, update: if owns(uid)
-        && request.resource.data.uid == uid
-        && request.resource.data.displayName is string
-        && request.resource.data.petPower is number;
-      allow delete: if owns(uid);
-    }
-
-    // Listings are shared. Sellers create/cancel their own listings; a buyer
-    // may only change an active listing to sold and attach their own UID.
-    match /marketListings/{listingId} {
-      allow read: if signedIn();
-
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly([
-          'pet', 'price', 'fee', 'speciesId', 'createdAt',
-          'sellerUid', 'sellerName', 'status'
-        ])
-        && request.resource.data.sellerUid == request.auth.uid
-        && request.resource.data.sellerName is string
-        && request.resource.data.speciesId is string
-        && request.resource.data.pet is map
-        && request.resource.data.price is int
-        && request.resource.data.price >= 10
-        && request.resource.data.price <= 1000000000
-        && request.resource.data.fee is int
-        && request.resource.data.createdAt is int
-        && request.resource.data.status == 'active';
-
-      allow update: if signedIn()
-        && resource.data.status == 'active'
-        && resource.data.sellerUid != request.auth.uid
-        && request.resource.data.status == 'sold'
-        && request.resource.data.buyerUid == request.auth.uid
-        && request.resource.data.soldAt is int
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'buyerUid', 'soldAt']);
-
-      allow delete: if signedIn()
-        && resource.data.sellerUid == request.auth.uid;
-    }
-
-    // Reserved for future announcements that every signed-in family member
-    // may read. It remains write-locked.
-    match /world/{document=**} {
-      allow read: if signedIn();
-      allow write: if false;
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    function signedIn() { return request.auth != null; }
+    function owns(uid) { return signedIn() && request.auth.uid == uid; }
+    match /players/{uid} { allow read, create, update, delete: if owns(uid); }
+    match /leaderboards/{uid} { allow read: if signedIn(); allow create, update, delete: if owns(uid); }
+    match /{document=**} { allow read, write: if false; }
   }
 }

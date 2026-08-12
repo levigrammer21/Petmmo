@@ -1,135 +1,41 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#176157" />
-    <meta name="description" content="Wilderden is a pet-driven idle RPG about gathering, area hunting, cooking, capturing, dungeons, construction, and trade." />
-    <title>Wilderden</title>
-    <link rel="icon" href="logo.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <noscript>This game requires JavaScript.</noscript>
-
-    <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
-
-    <section id="auth-view" class="auth-view" aria-labelledby="auth-title">
-      <div class="auth-art" aria-hidden="true">
-        <div class="auth-glow"></div>
-        <div class="auth-creature-showcase">
-          <img src="pets/moss-hare.png" alt="" decoding="async" fetchpriority="high" />
-          <img src="pets/dawn-koi.png" alt="" decoding="async" fetchpriority="high" />
-          <img src="pets/storm-lynx.png" alt="" decoding="async" fetchpriority="high" />
-          <img src="pets/crown-phoenix.png" alt="" decoding="async" fetchpriority="high" />
-        </div>
-      </div>
-      <div class="auth-panel">
-        <div class="auth-panel-inner">
-          <div class="brand-lockup">
-            <img class="brand-mark" src="logo.svg" alt="" />
-            <div>
-              <p class="eyebrow">Your den is waiting</p>
-              <h1 id="auth-title">Wilderden</h1>
-            </div>
-          </div>
-          <p class="auth-copy">Build a working den, hunt the wilds, raise remarkable pets, and let every skill keep growing while life carries on.</p>
-
-          <div class="auth-proof" aria-label="Game highlights">
-            <span><strong>50</strong> species</span>
-            <span><strong>14</strong> skills</span>
-            <span><strong>Always</strong> progressing</span>
-          </div>
-
-          <div class="auth-mode-switch" role="tablist" aria-label="Account access">
-            <button class="active" data-auth-mode="signin" role="tab" aria-selected="true" type="button">Sign in</button>
-            <button data-auth-mode="register" role="tab" aria-selected="false" type="button">Create account</button>
-          </div>
-
-          <form id="auth-form" class="auth-form">
-            <label id="name-field" hidden>
-              <span>Keeper name</span>
-              <input id="display-name" autocomplete="nickname" maxlength="28" placeholder="Name your keeper" />
-            </label>
-            <label>
-              <span>Email</span>
-              <input id="email" type="email" autocomplete="email" required placeholder="you@example.com" />
-            </label>
-            <label>
-              <span>Password</span>
-              <input id="password" type="password" autocomplete="current-password" minlength="6" required placeholder="At least 6 characters" />
-            </label>
-            <button id="email-submit" class="button primary wide" type="submit">Enter your den</button>
-            <div class="auth-divider"><span>or</span></div>
-            <button id="google-signin" class="button google" type="button"><span class="google-g">G</span> Continue with Google</button>
-            <button id="reset-password" class="text-button" type="button">Forgot your password?</button>
-          </form>
-
-          <p class="version-label">Version <span data-version></span> · Private family-world save</p>
-        </div>
-      </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#102725" />
+  <title>Wilderden</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="auth" class="auth-shell">
+    <section class="auth-card">
+      <div class="brand-mark">W</div><p class="eyebrow">IDLE RPG</p><h1>Wilderden</h1>
+      <p class="auth-copy">Train your Keeper. Put pets to work. Come back stronger.</p>
+      <button id="google" class="btn primary wide">Continue with Google</button>
+      <div class="or"><span></span><b>or</b><span></span></div>
+      <input id="email" class="input" type="email" placeholder="Email" autocomplete="email" />
+      <input id="password" class="input" type="password" placeholder="Password" autocomplete="current-password" />
+      <div class="auth-row"><button id="signin" class="btn wide">Sign in</button><button id="create" class="btn wide">Create account</button></div>
+      <button id="local" class="link-btn">Play locally on this device</button>
+      <p id="auth-message" class="small muted"></p>
     </section>
-
-    <div id="game-view" class="game-view" hidden>
-      <header class="topbar">
-        <button id="mobile-menu" class="icon-button mobile-only" type="button" aria-label="Open navigation">Menu</button>
-        <div class="top-brand">
-          <img class="brand-mark small" src="logo.svg" alt="" />
-          <div>
-            <strong>Wilderden</strong>
-            <span>v<span data-version></span></span>
-          </div>
-        </div>
-        <div class="top-resources" id="top-resources"></div>
-      </header>
-
-      <aside id="sidebar" class="sidebar" aria-label="Game navigation">
-        <nav id="main-nav">
-          <button class="nav-button active" data-panel="overview" type="button"><span>OV</span> Overview</button>
-          <button class="nav-button" data-panel="activities" type="button"><span>AC</span> Activities</button>
-          <button class="nav-button" data-panel="skills" type="button"><span>SK</span> Skills</button>
-          <button class="nav-button" data-panel="combat" type="button"><span>CB</span> Combat</button>
-          <button class="nav-button" data-panel="equipment" type="button"><span>EQ</span> Equipment</button>
-          <button class="nav-button" data-panel="inventory" type="button"><span>IN</span> Inventory</button>
-          <button class="nav-button" data-panel="store" type="button"><span>GS</span> General Store</button>
-          <button class="nav-button" data-panel="den" type="button"><span>DN</span> Pet Den</button>
-          <button class="nav-button" data-panel="kitchen" type="button"><span>KC</span> Kitchen & Craft</button>
-          <button class="nav-button" data-panel="processing" type="button"><span>PR</span> Processing</button>
-          <button class="nav-button" data-panel="construction" type="button"><span>CT</span> Construction</button>
-          <button class="nav-button" data-panel="dungeons" type="button"><span>DG</span> Dungeons</button>
-          <button class="nav-button" data-panel="market" type="button"><span>MK</span> Marketplace</button>
-          <button class="nav-button" data-panel="collection" type="button"><span>CL</span> Collection</button>
-        </nav>
-        <div class="sidebar-foot">
-          <div class="sidebar-keeper"><span>Keeper</span><strong id="keeper-name">Keeper</strong></div>
-          <div class="sidebar-active"><p>Active pets</p><strong id="active-count">0 / 6</strong></div>
-          <div class="meter"><span id="active-meter"></span></div>
-          <div class="sidebar-actions">
-            <button id="sound-toggle" class="button compact ghost sound-toggle" type="button" aria-pressed="true">Sound On</button>
-            <button id="account-action" class="button compact ghost" type="button">Exit</button>
-          </div>
-        </div>
-      </aside>
-
-      <main id="panel" class="panel" tabindex="-1"></main>
-
-      <aside class="status-rail" aria-label="Current status">
-        <section class="rail-card" id="assignment-rail"></section>
-        <section class="rail-card" id="capacity-rail"></section>
-        <section class="rail-card journal-card">
-          <div class="section-heading compact-heading">
-            <div><p class="eyebrow">Recent events</p><h2>Journal</h2></div>
-          </div>
-          <div id="journal-list" class="journal-list"></div>
-        </section>
-      </aside>
+  </div>
+  <div id="game" class="game hidden">
+    <header class="topbar">
+      <button class="mobile-menu" id="menu-btn" aria-label="Menu">☰</button>
+      <div class="brand"><div class="brand-mark small">W</div><div><strong>Wilderden</strong><small id="version"></small></div></div>
+      <div class="top-stats"><span>🪙 <b id="coins">0</b></span><span>❤️ <b id="keeper-hp">0/0</b></span><span>🐾 <b id="pet-count">0</b></span></div>
+      <button id="account-btn" class="icon-btn" title="Account">⋯</button>
+    </header>
+    <div class="layout">
+      <aside id="sidebar" class="sidebar"></aside>
+      <main id="main" class="main"></main>
     </div>
-
-    <dialog id="game-modal" class="game-modal">
-      <button id="modal-close" class="modal-close" type="button" aria-label="Close dialog">Close</button>
-      <div id="modal-content"></div>
-    </dialog>
-
-    <script type="module" src="app.js"></script>
-  </body>
+    <nav id="bottom-nav" class="bottom-nav"></nav>
+  </div>
+  <div id="toast-zone" class="toast-zone"></div>
+  <dialog id="modal"><div id="modal-body"></div><button class="modal-close" onclick="this.closest('dialog').close()">×</button></dialog>
+  <script type="module" src="app.js"></script>
+</body>
 </html>
