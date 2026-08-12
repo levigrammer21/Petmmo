@@ -1,5 +1,5 @@
 export const GAME_NAME = "Wilderden";
-export const GAME_VERSION = "0.8.0";
+export const GAME_VERSION = "0.8.1";
 export const MAX_ACTIVE_PETS = 6;
 export const MAX_COMBAT_PETS = 3;
 export const OFFLINE_CAP_MS = 24 * 60 * 60 * 1000;
@@ -137,11 +137,11 @@ export const ITEMS = {
   iron: { name: "Iron Ore", category: "material" },
   silver: { name: "Silver Ore", category: "material" },
   starstone: { name: "Starstone", category: "material" },
-  "wild-berries": { name: "Wild Berries", category: "ingredient" },
+  "wild-berries": { name: "Wild Berries", category: "ingredient", heal: 8 },
   herb: { name: "Wild Herb", category: "ingredient" },
   "wild-fiber": { name: "Wild Fiber", category: "material" },
-  root: { name: "Root Vegetable", category: "ingredient" },
-  embercap: { name: "Embercap", category: "ingredient" },
+  root: { name: "Root Vegetable", category: "ingredient", heal: 12 },
+  embercap: { name: "Embercap", category: "ingredient", heal: 16 },
   starbloom: { name: "Starbloom", category: "ingredient" },
   "raw-fish": { name: "Raw Fish", category: "ingredient" },
   "moon-fish": { name: "Moon Fish", category: "ingredient" },
@@ -290,11 +290,11 @@ export const BUILDINGS = [
 export const BUILDING_BY_ID = Object.fromEntries(BUILDINGS.map((entry) => [entry.id, entry]));
 
 export const DUNGEONS = [
-  { id: "root-cellar", name: "The Root Cellar", level: 20, duration: 90, recommendedPower: 340, favored: "Ember", entry: { "trail-pack": 1 }, rewards: { hardwood: 8, "wild-berries": 8, "heartwood-core": 1 }, encounter: "frosthorn-stag", encounterChance: 0.08 },
-  { id: "buried-foundry", name: "The Buried Foundry", level: 40, duration: 180, recommendedPower: 900, favored: "Tide", entry: { "foundry-key": 1 }, rewards: { iron: 14, silver: 6, "ember-gland": 2 }, encounter: "storm-lynx", encounterChance: 0.06 },
-  { id: "glass-labyrinth", name: "The Glass Labyrinth", level: 60, duration: 300, recommendedPower: 1750, favored: "Umbral", entry: { "foundry-key": 2 }, rewards: { quartz: 10, "relic-dust": 4, "mirage-eye": 1 }, encounter: "mirage-manticore", encounterChance: 0.04 },
-  { id: "tempest-spire", name: "The Tempest Spire", level: 80, duration: 480, recommendedPower: 2900, favored: "Stone", entry: { "storm-seal": 1 }, rewards: { starstone: 5, "spark-core": 5, "storm-silk": 2 }, encounter: "stormhorn-elk", encounterChance: 0.025 },
-  { id: "starfall-vault", name: "The Starfall Vault", level: 100, duration: 720, recommendedPower: 4700, favored: "Radiant", entry: { "storm-seal": 3, "storm-silk": 2 }, rewards: { starstone: 12, "relic-dust": 10, "prism-heart": 1 }, encounter: "prismatic-wyrm", encounterChance: 0.012 },
+  { id: "root-cellar", name: "The Root Cellar", level: 10, duration: 60, recommendedPower: 190, favored: "Ember", entry: { "trail-pack": 1 }, rewards: { hardwood: 8, "wild-berries": 8, "heartwood-core": 1 }, encounter: "frosthorn-stag", encounterChance: 0.08 },
+  { id: "buried-foundry", name: "The Buried Foundry", level: 30, duration: 120, recommendedPower: 650, favored: "Tide", entry: { "foundry-key": 1 }, rewards: { iron: 14, silver: 6, "ember-gland": 2 }, encounter: "storm-lynx", encounterChance: 0.06 },
+  { id: "glass-labyrinth", name: "The Glass Labyrinth", level: 50, duration: 210, recommendedPower: 1350, favored: "Umbral", entry: { "foundry-key": 2 }, rewards: { quartz: 10, "relic-dust": 4, "mirage-eye": 1 }, encounter: "mirage-manticore", encounterChance: 0.04 },
+  { id: "tempest-spire", name: "The Tempest Spire", level: 70, duration: 330, recommendedPower: 2300, favored: "Stone", entry: { "storm-seal": 1 }, rewards: { starstone: 5, "spark-core": 5, "storm-silk": 2 }, encounter: "stormhorn-elk", encounterChance: 0.025 },
+  { id: "starfall-vault", name: "The Starfall Vault", level: 90, duration: 480, recommendedPower: 3800, favored: "Radiant", entry: { "storm-seal": 3, "storm-silk": 2 }, rewards: { starstone: 12, "relic-dust": 10, "prism-heart": 1 }, encounter: "prismatic-wyrm", encounterChance: 0.012 },
 ];
 
 export const DUNGEON_BY_ID = Object.fromEntries(DUNGEONS.map((entry) => [entry.id, entry]));

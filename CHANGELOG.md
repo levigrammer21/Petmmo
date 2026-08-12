@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.1 — Combat flow and early-game pacing
+
+- Reframed persistent patrols in the interface as continuous combat: pets are fighting, not being sent away on a separate expedition-style minigame.
+- Reduced the artificial live-battle playback window from 14–45 seconds to 3.5–18 seconds so watched fights get to the action quickly.
+- Tightened displayed Processing cadence toward roughly 10 seconds for strong processors instead of a 30-second minimum.
+- Lowered dungeon level gates, recommended power, and expedition times so the first dungeon begins at level 10 and the curve ramps more gradually.
+- Made Wild Berries, Root Vegetables, and Embercaps directly edible healing resources from Inventory while preserving their crafting uses.
+- Kept the persistent/offline combat engine and save schema intact; a deeper true-live view into an already-running continuous fight requires the matching `game-engine.js` source.
+
 ## 0.8.0 — True idle sessions and combat patrols
 
 - Replaced endless food-fed gathering with explicit 1, 2, 4, 8, 12, and 24-hour saved sessions for both pets and the Keeper.

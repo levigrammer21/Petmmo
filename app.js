@@ -101,8 +101,8 @@ let authActionInProgress = false;
 let authLoadPromise = null;
 let loadedUserId = null;
 
-const COMBAT_MIN_PLAYBACK_MS = 14000;
-const COMBAT_MAX_PLAYBACK_MS = 45000;
+const COMBAT_MIN_PLAYBACK_MS = 3500;
+const COMBAT_MAX_PLAYBACK_MS = 18000;
 
 function readCombatSetup() {
   try {
@@ -440,9 +440,9 @@ function renderOverview() {
   const totalSkill = Object.values(gameState.skills).reduce((sum, skill) => sum + Number(skill.level || 1), 0);
   const totalPower = gameState.pets.reduce((sum, pet) => sum + scaledPetStats(pet).power, 0);
   const standings = leaderboard.length ? leaderboard.slice(0, 8) : [{ displayName: gameState.profile.displayName, petPower: totalPower, totalSkill, captures: gameState.stats.captures }];
-  panel.innerHTML = `${panelHeading("Keeper dashboard", `Welcome back, ${gameState.profile.displayName}`, "Choose sessions from one to twenty-four hours. Work, combat patrols, Processing, and dungeons continue after the browser closes.")}
+  panel.innerHTML = `${panelHeading("Keeper dashboard", `Welcome back, ${gameState.profile.displayName}`, "Choose sessions from one to twenty-four hours. Work, continuous combat, Processing, and dungeons continue after the browser closes.")}
     <section class="feature-card card">
-      <div class="feature-copy"><p class="eyebrow">Next useful move</p><h2>${gameState.pendingEncounter ? `Resolve the ${SPECIES_BY_ID[gameState.pendingEncounter.speciesId].name} encounter` : gameState.combatPatrol ? "Your patrol is hunting while you are away" : gameState.activities.length ? "Your den is already at work" : "Plan the den's next shift"}</h2><p>${gameState.pendingEncounter ? "Use a cooked meal for a capture attempt, or send the defeated pet to Processing." : gameState.combatPatrol ? "Combat resolves encounter by encounter, keeps injuries, uses meals only for Auto-eat, and sends victories to Processing." : gameState.activities.length ? "Saved session timers continue offline until their scheduled end, manual stop, or full storage." : "Set a one-to-twenty-four-hour work session, or send a party on a persistent combat patrol."}</p><button class="button" data-panel-jump="${gameState.pendingEncounter || gameState.combatPatrol ? "combat" : "activities"}" type="button">${gameState.pendingEncounter ? "Open encounter" : gameState.combatPatrol ? "Check patrol" : "Choose an activity"}</button></div>
+      <div class="feature-copy"><p class="eyebrow">Next useful move</p><h2>${gameState.pendingEncounter ? `Resolve the ${SPECIES_BY_ID[gameState.pendingEncounter.speciesId].name} encounter` : gameState.combatPatrol ? "Your patrol is hunting while you are away" : gameState.activities.length ? "Your den is already at work" : "Plan the den's next shift"}</h2><p>${gameState.pendingEncounter ? "Use a cooked meal for a capture attempt, or send the defeated pet to Processing." : gameState.combatPatrol ? "Combat resolves encounter by encounter, keeps injuries, uses meals only for Auto-eat, and sends victories to Processing." : gameState.activities.length ? "Saved session timers continue offline until their scheduled end, manual stop, or full storage." : "Set a one-to-twenty-four-hour work session, or send a party on a persistent continuous combat."}</p><button class="button" data-panel-jump="${gameState.pendingEncounter || gameState.combatPatrol ? "combat" : "activities"}" type="button">${gameState.pendingEncounter ? "Open encounter" : gameState.combatPatrol ? "Check patrol" : "Choose an activity"}</button></div>
       <div class="feature-creatures" aria-hidden="true"><img src="pets/moss-hare.png" alt=""/><img src="pets/dawn-koi.png" alt=""/><img src="pets/storm-lynx.png" alt=""/></div>
     </section>
     ${gameState.combatPatrol ? `<div style="margin-top:1rem">${combatPatrolCard(true)}</div>` : ""}
@@ -546,9 +546,9 @@ function renderKitchen() {
 function renderProcessing() {
   const idleProcessors = gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0);
   panel.innerHTML = `${panelHeading("Every victory has value", "Processing", "Defeated wild pets enter this queue after a declined, failed, or auto-harvested encounter. Processing recovers materials and coins.", `<span class="tag">${gameState.remains.length} waiting</span>`)}
-    <section class="processing-shift-launch card"><div><p class="eyebrow">Unattended queue worker</p><h2>Run Processing for 1–24 hours</h2><p>Assign a pet once and it will keep taking the oldest available remains—even ones your combat patrol brings home while you are away. An empty queue means it waits; food is never required.</p></div><div class="processing-shift-actions"><span><strong>${gameState.remains.length}</strong> waiting now</span><button class="button primary" data-action="open-processing-shift" ${idleProcessors.length ? "" : "disabled"} type="button">Assign Processing shift</button></div></section>
+    <section class="processing-shift-launch card"><div><p class="eyebrow">Unattended queue worker</p><h2>Run Processing for 1–24 hours</h2><p>Assign a pet once and it will keep taking the oldest available remains—even ones continuous combat brings home while you are away. An empty queue means it waits; food is never required.</p></div><div class="processing-shift-actions"><span><strong>${gameState.remains.length}</strong> waiting now</span><button class="button primary" data-action="open-processing-shift" ${idleProcessors.length ? "" : "disabled"} type="button">Assign Processing shift</button></div></section>
     ${liveAssignmentsBoard("Processing shifts and jobs", (assignment) => ["processing", "processing-shift", "keeper-processing"].includes(assignment.kind))}
-    ${gameState.remains.length ? `<div class="recipe-grid">${gameState.remains.map((remain) => { const species = SPECIES_BY_ID[remain.speciesId]; return `<article class="recipe-card card processing-card"><p class="eyebrow">${escapeHtml(species.region)}</p><h3>${escapeHtml(species.name)}</h3><div class="processing-value"><span>Base coin recovery</span><strong>${processingCoinReward(species)}</strong></div><div class="cost-list">${Object.entries(species.materials).map(([id, amount]) => `<span class="tag">${amount} ${escapeHtml(inventoryName(id))}</span>`).join("")}</div><p class="muted small-copy">Processing aptitude changes time, material yield, and bonus coin recovery. A Smokehouse adds another permanent output boost.</p><div class="action-buttons"><button class="button secondary" data-action="start-keeper-processing" data-id="${remain.id}" ${gameState.keeperActivity || gameState.combatPatrol?.includeKeeper ? "disabled" : ""} type="button">Do it myself</button><button class="button primary" data-action="open-start" data-kind="processing" data-id="${remain.id}" type="button">Assign pet</button></div></article>`; }).join("")}</div>` : `<div class="empty-state"><strong>No remains are waiting.</strong><p>You can still start a Processing shift now; it will wait for combat patrol victories and future declined captures.</p></div>`}`;
+    ${gameState.remains.length ? `<div class="recipe-grid">${gameState.remains.map((remain) => { const species = SPECIES_BY_ID[remain.speciesId]; return `<article class="recipe-card card processing-card"><p class="eyebrow">${escapeHtml(species.region)}</p><h3>${escapeHtml(species.name)}</h3><div class="processing-value"><span>Base coin recovery</span><strong>${processingCoinReward(species)}</strong></div><div class="cost-list">${Object.entries(species.materials).map(([id, amount]) => `<span class="tag">${amount} ${escapeHtml(inventoryName(id))}</span>`).join("")}</div><p class="muted small-copy">Processing aptitude changes time, material yield, and bonus coin recovery. A Smokehouse adds another permanent output boost.</p><div class="action-buttons"><button class="button secondary" data-action="start-keeper-processing" data-id="${remain.id}" ${gameState.keeperActivity || gameState.combatPatrol?.includeKeeper ? "disabled" : ""} type="button">Do it myself</button><button class="button primary" data-action="open-start" data-kind="processing" data-id="${remain.id}" type="button">Assign pet</button></div></article>`; }).join("")}</div>` : `<div class="empty-state"><strong>No remains are waiting.</strong><p>You can still start a Processing shift now; it will wait for continuous-combat victories and future declined captures.</p></div>`}`;
 }
 
 function renderConstruction() {
@@ -571,10 +571,10 @@ function combatPatrolCard(compact = false) {
   const expected = Math.max(1, Math.floor((run.endAt - run.startedAt) / Math.max(1, run.intervalMs)));
   const pets = run.petIds.map((petId) => gameState.pets.find((entry) => entry.id === petId)).filter(Boolean);
   return `<section class="patrol-status card ${compact ? "compact" : ""}" data-live-patrol="${run.id}">
-    <div class="patrol-head"><div><p class="eyebrow">Persistent combat patrol</p><h2>${escapeHtml(region?.name || run.regionId)}</h2><p>Continues while the game is closed. Victories are sent to Processing automatically.</p></div><div class="patrol-clock"><strong data-patrol-time>${formatTime(Math.max(0, run.endAt - Date.now()))} left</strong><span>${new Date(run.endAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} return</span></div></div>
+    <div class="patrol-head"><div><p class="eyebrow">Continuous combat</p><h2>${escapeHtml(region?.name || run.regionId)}</h2><p>Keeps fighting while the game is closed. Victories are sent to Processing automatically.</p></div><div class="patrol-clock"><strong data-patrol-time>${formatTime(Math.max(0, run.endAt - Date.now()))} left</strong><span>${new Date(run.endAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} return</span></div></div>
     <div class="patrol-body"><div class="patrol-team">${run.includeKeeper ? `<div class="patrol-member keeper-job-avatar" title="Keeper">K</div>` : ""}${pets.map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; return `<div class="patrol-member"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(pet.customName || species.name)}"/><span>${pet.currentHp}/${scaledPetStats(pet).hp}</span></div>`; }).join("")}</div><div class="patrol-stats"><span><strong>${run.completedBattles}</strong> encounters</span><span><strong>${run.victories}</strong> victories</span><span><strong>${run.harvested}</strong> remains</span><span><strong>${run.mealsUsed}</strong> meals used</span></div></div>
     <div class="patrol-progress"><span data-patrol-progress style="width:${Math.min(100, Math.max(0, (Date.now() - run.startedAt) / Math.max(1, run.endAt - run.startedAt) * 100))}%"></span></div>
-    <div class="patrol-foot"><span>Next encounter in ${formatTime(Math.max(0, run.nextEncounterAt - Date.now()))} · about ${expected} planned</span><button class="button small secondary" data-action="stop-combat-patrol" type="button">Call party home</button></div>
+    <div class="patrol-foot"><span>Next encounter in ${formatTime(Math.max(0, run.nextEncounterAt - Date.now()))} · about ${expected} planned</span><button class="button small secondary" data-action="stop-combat-patrol" type="button">Stop fighting</button></div>
   </section>`;
 }
 
@@ -582,7 +582,7 @@ function combatReportCard() {
   const report = gameState.lastCombatReport;
   if (!report || gameState.combatPatrol) return "";
   const region = REGIONS.find((entry) => entry.id === report.regionId);
-  return `<section class="patrol-report card"><div><p class="eyebrow">Last patrol report</p><h3>${escapeHtml(region?.name || report.regionId)}</h3><span>${report.reason === "downed" ? "Party downed" : report.reason === "stopped" ? "Returned early" : "Completed"}</span></div><div><strong>${report.victories}/${report.completedBattles}</strong><span>victories</span></div><div><strong>${report.harvested}</strong><span>sent to Processing</span></div><div><strong>${report.mealsUsed}</strong><span>meals used</span></div></section>`;
+  return `<section class="patrol-report card"><div><p class="eyebrow">Last combat session</p><h3>${escapeHtml(region?.name || report.regionId)}</h3><span>${report.reason === "downed" ? "Party downed" : report.reason === "stopped" ? "Returned early" : "Completed"}</span></div><div><strong>${report.victories}/${report.completedBattles}</strong><span>victories</span></div><div><strong>${report.harvested}</strong><span>sent to Processing</span></div><div><strong>${report.mealsUsed}</strong><span>meals used</span></div></section>`;
 }
 
 function idleCombatPartyMarkup(run = null) {
@@ -606,22 +606,22 @@ function renderCombat() {
   const currentPool = listAreaOpponents(gameState, currentRegion.id);
   const preferredMeal = meals.some(([id]) => id === preferences.mealId) ? preferences.mealId : meals[0]?.[0] || "";
   const keeperUnavailable = Boolean(gameState.keeperActivity || Number(gameState.profile.currentHp || 0) <= 0);
-  panel.innerHTML = `${panelHeading("Offline and live area combat", "The Wilds", "Send a party on a saved 1–24 hour patrol, or watch one fully timed encounter with attack meters, hit splats, healing abilities, and capture decisions.", run ? `<span class="tag hunt-live-tag"><i></i> Patrol active</span>` : "")}
+  panel.innerHTML = `${panelHeading("Continuous area combat", "The Wilds", "Choose a party and let them keep fighting. Combat persists when you leave, and the battle screen stays focused on the fight instead of treating it like a distant expedition.", run ? `<span class="tag hunt-live-tag"><i></i> Fighting now</span>` : "")}
     ${pending ? encounterCard(pending) : ""}
     ${run ? combatPatrolCard() : combatReportCard()}
-    <section id="combat-stage" class="combat-stage ${activeBattle ? "battle-live" : "battle-idle"}">${activeBattle ? combatStageMarkup(activeBattle) : `<div class="combat-header"><span class="battle-state ready">${run ? "Patrol underway" : "Wilds ready"}</span><span>${run ? "Saved offline combat" : "Independent attack meters"}</span></div><div class="idle-arena"><div>${idleCombatPartyMarkup(run)}</div><span>VS</span><div class="wild-silhouette"><span>WILD</span></div></div><div class="battle-message">${run ? `${run.completedBattles} encounters resolved · next in ${formatTime(Math.max(0, run.nextEncounterAt - Date.now()))}` : "Choose an area and a party — enemies are found automatically"}</div>`}</section>
+    <section id="combat-stage" class="combat-stage ${activeBattle ? "battle-live" : "battle-idle"}">${activeBattle ? combatStageMarkup(activeBattle) : `<div class="combat-header"><span class="battle-state ready">${run ? "Fighting continuously" : "Wilds ready"}</span><span>${run ? "Persistent combat session" : "Independent attack meters"}</span></div><div class="idle-arena"><div>${idleCombatPartyMarkup(run)}</div><span>VS</span><div class="wild-silhouette"><span>WILD</span></div></div><div class="battle-message">${run ? `${run.completedBattles} encounters resolved · next in ${formatTime(Math.max(0, run.nextEncounterAt - Date.now()))}` : "Choose an area and a party — enemies are found automatically"}</div>`}</section>
     ${!activeBattle && !pending && !run ? `<div class="combat-setup">
       <article class="selection-card card"><p class="eyebrow">Party</p><h3>Up to three pets; Keeper optional</h3><label class="check-option keeper-option"><input id="combat-keeper" type="checkbox" ${keeperUnavailable ? "disabled" : localSetup.includeKeeper === true ? "checked" : ""}/><span>Keeper<small>${gameState.keeperActivity ? "Busy with an action" : Number(gameState.profile.currentHp || 0) <= 0 ? "Downed — heal first" : `${escapeHtml(weapon?.name || "No weapon")} · ${escapeHtml(weapon?.style || "unarmed")}`}</small></span><strong>${gameState.profile.currentHp} HP</strong></label><div class="check-list" id="combat-pet-list">${gameState.pets.filter((pet) => pet.status === "idle" && !petIsInLiveBattle(pet.id) && Number(pet.currentHp || 0) > 0).map((pet) => { const species = SPECIES_BY_ID[pet.speciesId]; return `<label class="check-option"><input type="checkbox" name="combat-pet" value="${pet.id}" ${selectedCombatPets.has(pet.id) ? "checked" : ""}/><span>${escapeHtml(pet.customName || species.name)}<small>Level ${pet.level} · ${pet.currentHp}/${scaledPetStats(pet).hp} HP</small></span><strong>${formatNumber(scaledPetStats(pet).power)}</strong></label>`; }).join("") || `<div class="empty-state">No healthy idle pets are available.</div>`}</div></article>
-      <article class="selection-card card hunt-control-card"><p class="eyebrow">Patrol plan</p><h3>${escapeHtml(currentRegion.name)}</h3><div class="area-picker">${REGIONS.map((region) => { const pool = listAreaOpponents(gameState, region.id); const unlocked = pool.length > 0; return `<button class="area-card ${region.id === selectedCombatRegion ? "active" : ""} ${unlocked ? "" : "locked"}" data-combat-region="${region.id}" ${unlocked ? "" : "disabled"} type="button"><span>${escapeHtml(region.name)}</span><small>${unlocked ? `${pool.length} possible enemies` : `Combat ${region.level}+`}</small></button>`; }).join("")}</div>
-        <div class="encounter-band"><span>Encounter pool</span><strong>${currentPool.length} enemies</strong><small>Patrols repeatedly roll this weighted area pool. Rare creatures and area bosses remain genuinely rare.</small></div>
+      <article class="selection-card card hunt-control-card"><p class="eyebrow">Combat plan</p><h3>${escapeHtml(currentRegion.name)}</h3><div class="area-picker">${REGIONS.map((region) => { const pool = listAreaOpponents(gameState, region.id); const unlocked = pool.length > 0; return `<button class="area-card ${region.id === selectedCombatRegion ? "active" : ""} ${unlocked ? "" : "locked"}" data-combat-region="${region.id}" ${unlocked ? "" : "disabled"} type="button"><span>${escapeHtml(region.name)}</span><small>${unlocked ? `${pool.length} possible enemies` : `Combat ${region.level}+`}</small></button>`; }).join("")}</div>
+        <div class="encounter-band"><span>Encounter pool</span><strong>${currentPool.length} enemies</strong><small>Continuous combat repeatedly rolls this weighted area pool. Rare creatures and area bosses remain genuinely rare.</small></div>
         ${durationPickerMarkup("combat-duration")}
         <div class="combat-controls"><label class="field">Combat style<select id="combat-style"><option value="${escapeHtml(weapon?.style || "melee")}">${escapeHtml((weapon?.style || "melee").replace(/^./, (c) => c.toUpperCase()))} · equipped weapon</option></select></label><label class="field">Battle meal<select id="combat-meal">${meals.map(([id, quantity]) => `<option value="${id}" ${id === preferredMeal ? "selected" : ""}>${escapeHtml(inventoryName(id))} · heals ${ITEMS[id].heal} (${quantity})</option>`).join("") || `<option value="">No meals owned</option>`}</select></label></div>
         <div class="automation-grid">
-          <label class="automation-option"><input id="combat-auto-eat" type="checkbox" ${(localSetup.autoEat ?? (preferences.autoEat !== false)) ? "checked" : ""}/><span><strong>Auto-eat</strong><small>Use the selected food only when a fighter drops below 38% health. Running out does not stop the patrol.</small></span></label>
-          <label class="automation-option"><input id="combat-auto-harvest" type="checkbox" ${(localSetup.autoHarvest ?? (preferences.autoHarvest !== false)) ? "checked" : ""}/><span><strong>Auto-harvest live victory</strong><small>For the one live hunt only. Patrol victories always enter Processing so the patrol can continue.</small></span></label>
+          <label class="automation-option"><input id="combat-auto-eat" type="checkbox" ${(localSetup.autoEat ?? (preferences.autoEat !== false)) ? "checked" : ""}/><span><strong>Auto-eat</strong><small>Use the selected food only when a fighter drops below 38% health. Running out does not stop the combat session.</small></span></label>
+          <label class="automation-option"><input id="combat-auto-harvest" type="checkbox" ${(localSetup.autoHarvest ?? (preferences.autoHarvest !== false)) ? "checked" : ""}/><span><strong>Auto-harvest live victory</strong><small>For a watched fight. Unattended victories enter Processing automatically so combat can keep moving.</small></span></label>
         </div>
-        <div class="hunt-mode-actions"><button class="button primary hunt-start" data-action="start-combat-patrol" ${!currentPool.length ? "disabled" : ""} type="button">Begin idle patrol</button><button class="button secondary" data-action="start-combat" ${!currentPool.length || !weapon ? "disabled" : ""} type="button">Watch one live hunt</button></div>
-        <div class="notice"><strong>Two distinct modes.</strong> Idle patrol is the long-running offline loop and auto-harvests. A live hunt plays every attack and can pause at a capture opportunity.</div></article>
+        <div class="hunt-mode-actions"><button class="button primary hunt-start" data-action="start-combat-patrol" ${!currentPool.length ? "disabled" : ""} type="button">Start continuous combat</button><button class="button secondary" data-action="start-combat" ${!currentPool.length || !weapon ? "disabled" : ""} type="button">Watch a fight now</button></div>
+        <div class="notice"><strong>One combat system.</strong> Continuous combat keeps fighting when you leave. Watching simply shows a fight play out in real time; it is not a separate progression mode.</div></article>
     </div>` : ""}`;
   updateBattleClock();
 }
@@ -863,7 +863,7 @@ function durationPickerMarkup(name = "idle-duration", selected = 2) {
 
 function processingDisplayDuration(pet) {
   const aptitude = Math.max(1, Math.min(10, Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes.processing || 1)));
-  return Math.max(30000, Math.round(30000 * Math.pow(10 / aptitude, 1.1)));
+  return Math.max(8000, Math.round(10000 * Math.pow(10 / aptitude, 0.45)));
 }
 
 function openProcessingShiftModal() {
@@ -1084,7 +1084,7 @@ async function startCombatAction() {
     if (result?.battle) beginBattle(result.battle, true);
   } finally {
     combatRequestInProgress = false;
-    if (button?.isConnected) { button.disabled = false; button.textContent = "Watch one live hunt"; }
+    if (button?.isConnected) { button.disabled = false; button.textContent = "Watch a fight now"; }
   }
 }
 
@@ -1102,13 +1102,13 @@ async function startCombatPatrolAction() {
   writeCombatSetup({ autoEat: request.autoEat, autoHarvest: Boolean($("#combat-auto-harvest")?.checked), includeKeeper: request.includeKeeper });
   combatRequestInProgress = true;
   const button = $("[data-action='start-combat-patrol']");
-  if (button) { button.disabled = true; button.textContent = "Sending patrol…"; }
+  if (button) { button.disabled = true; button.textContent = "Starting combat…"; }
   try {
     const result = await runAction("startCombatPatrol", request);
-    if (result?.state) toast("Combat patrol started.", "info", `The party returns in ${request.durationHours} hour${request.durationHours === 1 ? "" : "s"}.`);
+    if (result?.state) toast("Continuous combat started.", "info", `The party will keep fighting for ${request.durationHours} hour${request.durationHours === 1 ? "" : "s"}, unless you stop it early.`);
   } finally {
     combatRequestInProgress = false;
-    if (button?.isConnected) { button.disabled = false; button.textContent = "Begin idle patrol"; }
+    if (button?.isConnected) { button.disabled = false; button.textContent = "Start continuous combat"; }
   }
 }
 

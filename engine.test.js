@@ -540,10 +540,10 @@ test("the Spark-plan client has no paid Cloud Functions dependency", async () =>
   assert.equal(deployPackage.scripts["deploy:backend"], "firebase deploy --only firestore:rules,firestore:indexes");
 });
 
-test("the UI exposes 24-hour work, persistent patrols, RPG skills, and non-animated combat feedback", async () => {
+test("the UI exposes 24-hour work, continuous combat, RPG skills, and non-animated combat feedback", async () => {
   const source = await readFile(new URL("./app.js", import.meta.url), "utf8");
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
-  assert.match(source, /COMBAT_MIN_PLAYBACK_MS = 14000/);
+  assert.match(source, /COMBAT_MIN_PLAYBACK_MS = 3500/);
   assert.match(source, /data-assignment-time/);
   assert.match(source, /data-attack-meter/);
   assert.match(source, /battle-log/);

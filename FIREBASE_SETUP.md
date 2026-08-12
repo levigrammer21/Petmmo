@@ -32,7 +32,7 @@ Do not include `https://` or `/Petmmo/`.
 
 An email/password account and a Google sign-in are different ways to enter. If an address was first used with Google, use **Continue with Google** unless you separately created an Email/Password account.
 
-## 3. Upload version 0.8.0 to GitHub
+## 3. Upload version 0.8.1 to GitHub
 
 Replace the old repository files with every file from this release. Keep all files at the repository root and keep only the artwork inside `pets/`.
 
@@ -40,7 +40,7 @@ Wait for GitHub Pages to finish publishing before testing.
 
 ## 4. Publish the free Firestore backend
 
-If you already completed the rules/index deployment successfully for version 0.3.0 or later, **skip this step**. Version 0.8.0 changes the game screen, save schema, and browser-side engine; its Firestore rules and indexes are unchanged.
+If you already completed the rules/index deployment successfully for version 0.3.0 or later, **skip this step**. Version 0.8.1 changes the game screen, save schema, and browser-side engine; its Firestore rules and indexes are unchanged.
 
 For a new installation, open Firebase Cloud Shell. If your existing folder is still named `Petmmo-deploy-021`, paste this as one command:
 
@@ -63,7 +63,7 @@ You can also paste the complete contents of `firestore.rules` into **Cloud Fires
 ## 5. Test on your phone
 
 1. Open `https://levigrammer21.github.io/Petmmo/` in a normal Chrome tab.
-2. Refresh once so Chrome receives version 0.8.0.
+2. Refresh once so Chrome receives version 0.8.1.
 3. Use **Continue with Google** for the Google account you already tested.
 4. The game creates `players/{your Firebase UID}` automatically.
 5. Open Equipment and confirm the starter sword and armour appear.
