@@ -46,6 +46,7 @@ import {
   storageCapacity,
 } from "./game-engine.js";
 import { connectFirebase } from "./firebase-client.js";
+import { friendlyAuthError } from "./auth-errors.js";
 
 const LOCAL_SAVE = "pet-idle-mmo-local-v1";
 const PLACEHOLDER_ART = "pets/ash-raccoon.png";
@@ -70,6 +71,9 @@ let selectedDungeonPets = new Set();
 let battleTimers = [];
 let renderQueued = false;
 let authMode = "signin";
+let authActionInProgress = false;
+let authLoadPromise = null;
+let loadedUserId = null;
 
 const affinityColors = {
   Ember: ["#b85b38", "#f2d2bf"], Verdant: ["#668353", "#dce8cf"], Tide: ["#4c7890", "#d4e7ec"],
@@ -95,8 +99,8 @@ function toast(message, type = "info", detail = "") {
 
 function reportError(error) {
   console.error(error);
-  const message = error?.message?.replace(/^Firebase:\s*/i, "") || "Something went wrong.";
-  toast(message, "error");
+  const [message, detail] = friendlyAuthError(error);
+  toast(message, "error", detail);
 }
 
 function saveLocal() {
@@ -598,8 +602,28 @@ function leaveGame() {
   clearBattleTimers();
   gameState = null;
   mode = "auth";
+  loadedUserId = null;
   $("#game-view").hidden = true;
   $("#auth-view").hidden = false;
+}
+
+async function loadAuthenticatedUser(user, preferredName = "") {
+  if (!user || !firebase) return null;
+  currentUser = user;
+  if (loadedUserId === user.uid && mode === "firebase" && gameState) return { state: gameState };
+  if (authLoadPromise) return authLoadPromise;
+  authLoadPromise = (async () => {
+    const result = await firebase.initializePlayer(preferredName || user.displayName || "Keeper");
+    if (!result?.state) throw Object.assign(new Error("internal"), { code: "functions/internal" });
+    loadedUserId = user.uid;
+    enterGame("firebase", result.state);
+    return result;
+  })();
+  try {
+    return await authLoadPromise;
+  } finally {
+    authLoadPromise = null;
+  }
 }
 
 async function initializeFirebase() {
@@ -607,10 +631,14 @@ async function initializeFirebase() {
     firebase = await connectFirebase({
       onAuth: async (user) => {
         currentUser = user;
-        if (!user) { if (mode === "firebase") leaveGame(); return; }
+        if (!user) {
+          loadedUserId = null;
+          if (mode === "firebase") leaveGame();
+          return;
+        }
+        if (!firebase || authActionInProgress) return;
         try {
-          const result = await firebase?.initializePlayer(user.displayName || "Keeper");
-          if (result?.state) enterGame("firebase", result.state);
+          await loadAuthenticatedUser(user);
         } catch (error) { reportError(error); }
       },
       onState: (state) => {
@@ -623,9 +651,11 @@ async function initializeFirebase() {
       onLeaderboard: (entries) => { leaderboard = entries; if (currentPanel === "overview") queueRender(); },
       onError: (error) => console.warn("Firebase listener", error),
     });
+    const initialUser = await firebase.authReady;
+    if (initialUser && mode !== "firebase" && !authActionInProgress) await loadAuthenticatedUser(initialUser);
   } catch (error) {
     console.warn("Firebase unavailable.", error);
-    if (!previewEnabled) toast("The game service could not connect.", "error", "Refresh the page and try again.");
+    if (!previewEnabled) reportError(error);
   }
 }
 
@@ -642,6 +672,15 @@ function setAuthMode(nextMode) {
   $("#password").autocomplete = registering ? "new-password" : "current-password";
   $("#email-submit").textContent = registering ? "Create your den" : "Enter your den";
   $("#reset-password").hidden = registering;
+}
+
+function setAuthBusy(busy, provider = "email") {
+  $("#email-submit").disabled = busy;
+  $("#google-signin").disabled = busy;
+  $("#reset-password").disabled = busy;
+  $$('[data-auth-mode]').forEach((button) => { button.disabled = busy; });
+  if (busy) $("#email-submit").textContent = provider === "google" ? "Opening Google…" : authMode === "register" ? "Creating your den…" : "Signing in…";
+  else $("#email-submit").textContent = authMode === "register" ? "Create your den" : "Enter your den";
 }
 
 function enterLocalPreview() {
@@ -692,16 +731,39 @@ $$("[data-auth-mode]").forEach((button) => button.addEventListener("click", () =
 $("#auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!firebase) return toast("The game service is still connecting.", "error", "Please wait a moment and try again.");
+  authActionInProgress = true;
+  setAuthBusy(true, "email");
   try {
     if (authMode === "register") {
-      await firebase.registerEmail($("#email").value.trim(), $("#password").value, $("#display-name").value.trim());
-      toast("Account created. Verification email sent.");
+      const displayName = $("#display-name").value.trim();
+      const credential = await firebase.registerEmail($("#email").value.trim(), $("#password").value, displayName);
+      await loadAuthenticatedUser(credential.user, displayName);
+      toast(credential.verificationSent ? "Account created. Verification email sent." : "Account created.", "info", credential.verificationSent ? "" : "The verification email could not be sent, but your den is ready.");
     } else {
-      await firebase.signInEmail($("#email").value.trim(), $("#password").value);
+      const credential = await firebase.signInEmail($("#email").value.trim(), $("#password").value);
+      await loadAuthenticatedUser(credential.user);
     }
-  } catch (error) { reportError(error); }
+  } catch (error) {
+    reportError(error);
+  } finally {
+    authActionInProgress = false;
+    setAuthBusy(false);
+  }
 });
-$("#google-signin").addEventListener("click", async () => { if (!firebase) return toast("Firebase is still connecting.", "error"); try { await firebase.signInGoogle(); } catch (error) { reportError(error); } });
+$("#google-signin").addEventListener("click", async () => {
+  if (!firebase) return toast("The game service is still connecting.", "error", "Please wait a moment and try again.");
+  authActionInProgress = true;
+  setAuthBusy(true, "google");
+  try {
+    const credential = await firebase.signInGoogle();
+    await loadAuthenticatedUser(credential.user);
+  } catch (error) {
+    reportError(error);
+  } finally {
+    authActionInProgress = false;
+    setAuthBusy(false);
+  }
+});
 $("#reset-password").addEventListener("click", async () => { const email = $("#email").value.trim(); if (!email) return toast("Enter your email first.", "error"); try { await firebase.sendPasswordReset(email); toast("Password reset email sent."); } catch (error) { reportError(error); } });
 
 document.addEventListener("visibilitychange", async () => {

@@ -87,16 +87,19 @@ export async function connectFirebase(handlers = {}) {
     registerEmail: async (email, password, displayName) => {
       const credential = await authSdk.createUserWithEmailAndPassword(auth, email, password);
       if (displayName) await authSdk.updateProfile(credential.user, { displayName: displayName.slice(0, 28) });
-      await authSdk.sendEmailVerification(credential.user);
-      await call("initializePlayer", { displayName: displayName || credential.user.displayName || "Keeper" });
-      return credential;
+      let verificationSent = true;
+      try {
+        await authSdk.sendEmailVerification(credential.user);
+      } catch (error) {
+        verificationSent = false;
+        console.warn("Verification email could not be sent.", error);
+      }
+      return { user: credential.user, verificationSent };
     },
     signInGoogle: async () => {
       const provider = new authSdk.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const credential = await authSdk.signInWithPopup(auth, provider);
-      await call("initializePlayer", { displayName: credential.user.displayName || "Keeper" });
-      return credential;
+      return authSdk.signInWithPopup(auth, provider);
     },
     sendPasswordReset: (email) => authSdk.sendPasswordResetEmail(auth, email),
     signOut: () => authSdk.signOut(auth),

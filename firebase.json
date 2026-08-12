@@ -23,6 +23,7 @@
       "worker",
       "*.zip",
       "app.js",
+      "auth-errors.js",
       "firebase-client.js",
       "firebase-config.js",
       "engine.test.js",

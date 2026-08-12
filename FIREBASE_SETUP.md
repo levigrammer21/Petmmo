@@ -74,6 +74,8 @@ From the project root:
 npm run deploy:backend
 ```
 
+Run this command again whenever `functions.js`, the game engine, or Firebase rules change. Uploading files to GitHub Pages updates only the website; it does not update Cloud Functions.
+
 That deploys:
 
 - Node.js 22 callable Cloud Functions

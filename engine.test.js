@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   attemptCapture,
   claimDungeon,
@@ -20,6 +21,7 @@ import {
   startRecipe,
 } from "./game-engine.js";
 import { ACTIVITIES, BUILDINGS, DUNGEONS, ITEMS, PET_SPECIES, RECIPES } from "./game-data.js";
+import { friendlyAuthError } from "./auth-errors.js";
 
 test("initial save has the locked capacities and starter", () => {
   const state = createInitialState("Test Keeper");
@@ -212,4 +214,23 @@ test("market transfers charge a listing fee and preserve unrestricted pet trade"
   assert.equal(nextBuyer.profile.coins, 1_000);
   assert.equal(nextBuyer.pets.at(-1).tradeCount, 1);
   assert.equal(nextSeller.profile.coins, 1_140);
+});
+
+test("Cloud Functions use valid Admin SDK document references", async () => {
+  const source = await readFile(new URL("./functions.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\bdb\.doc\s*\(/, "Admin Firestore document references must be created through collection().doc()");
+  assert.match(source, /db\.collection\("players"\)\.doc\(/);
+  assert.match(source, /db\.collection\("leaderboards"\)\.doc\(/);
+  assert.match(source, /db\.collection\("marketListings"\)\.doc\(/);
+});
+
+test("authentication errors give players an actionable next step", () => {
+  assert.deepEqual(friendlyAuthError({ code: "auth/invalid-credential" }), [
+    "Email or password not recognized.",
+    "If this is your first visit, choose Create account. Google accounts should use Continue with Google.",
+  ]);
+  assert.deepEqual(friendlyAuthError({ code: "functions/internal", message: "internal" }), [
+    "Your account signed in, but your den could not be loaded.",
+    "Redeploy the Firebase backend from this release, then try again.",
+  ]);
 });

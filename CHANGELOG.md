@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — Authentication repair
+
+- Corrected every Cloud Functions Firestore reference to use the Admin SDK's collection/document API, allowing new player saves and leaderboards to initialize after Google or email sign-in.
+- Removed duplicate player-initialization calls during Google sign-in and account creation.
+- Made returning authenticated sessions reliably resume initialization after Firebase finishes loading.
+- Added clear, actionable authentication messages instead of exposing `internal` and `auth/invalid-credential` errors.
+- Added disabled/loading states while account actions are running to prevent double submissions.
+
 ## 0.2.0 — Full product presentation
 
 - Locked login and game into mutually exclusive full-viewport states so game UI can never appear beneath the login screen.

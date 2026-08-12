@@ -76,8 +76,8 @@ function seededRandom(seedText) {
 }
 
 async function writePlayerAndBoard(transaction, uid, state) {
-  transaction.set(db.doc("players", uid), state);
-  transaction.set(db.doc("leaderboards", uid), publicProfile(state, uid));
+  transaction.set(db.collection("players").doc(uid), state);
+  transaction.set(db.collection("leaderboards").doc(uid), publicProfile(state, uid));
 }
 
 export const initializePlayer = onCall(CALLABLE_OPTIONS, async (request) => {
@@ -86,7 +86,7 @@ export const initializePlayer = onCall(CALLABLE_OPTIONS, async (request) => {
   const displayName = cleanDisplayName(request.data?.displayName, user.displayName);
   try {
     const state = await db.runTransaction(async (transaction) => {
-      const ref = db.doc("players", user.uid);
+      const ref = db.collection("players").doc(user.uid);
       const snapshot = await transaction.get(ref);
       let next;
       if (snapshot.exists) {
@@ -110,7 +110,7 @@ export const syncGame = onCall(CALLABLE_OPTIONS, async (request) => {
   const at = Date.now();
   try {
     const result = await db.runTransaction(async (transaction) => {
-      const ref = db.doc("players", user.uid);
+      const ref = db.collection("players").doc(user.uid);
       const snapshot = await transaction.get(ref);
       if (!snapshot.exists) throw new GameError("Create your keeper first.", "not-found");
       const settled = settleState(snapshot.data(), at, seededRandom(`${user.uid}:sync:${at}`));
@@ -149,7 +149,7 @@ export const gameAction = onCall(CALLABLE_OPTIONS, async (request) => {
   const actionNonce = crypto.randomUUID();
   try {
     const result = await db.runTransaction(async (transaction) => {
-      const ref = db.doc("players", user.uid);
+      const ref = db.collection("players").doc(user.uid);
       const snapshot = await transaction.get(ref);
       if (!snapshot.exists) throw new GameError("Create your keeper first.", "not-found");
       const random = seededRandom(`${user.uid}:${action}:${actionNonce}`);
@@ -171,7 +171,7 @@ export const listPet = onCall(CALLABLE_OPTIONS, async (request) => {
   const listingRef = db.collection("marketListings").doc();
   try {
     const result = await db.runTransaction(async (transaction) => {
-      const playerRef = db.doc("players", user.uid);
+      const playerRef = db.collection("players").doc(user.uid);
       const snapshot = await transaction.get(playerRef);
       if (!snapshot.exists) throw new GameError("Player not found.", "not-found");
       const settled = settleState(snapshot.data(), at, seededRandom(`${user.uid}:list:${listingRef.id}`)).state;
@@ -199,8 +199,8 @@ export const cancelListing = onCall(CALLABLE_OPTIONS, async (request) => {
   const at = Date.now();
   try {
     const state = await db.runTransaction(async (transaction) => {
-      const listingRef = db.doc("marketListings", listingId);
-      const playerRef = db.doc("players", user.uid);
+      const listingRef = db.collection("marketListings").doc(listingId);
+      const playerRef = db.collection("players").doc(user.uid);
       const [listingSnapshot, playerSnapshot] = await Promise.all([transaction.get(listingRef), transaction.get(playerRef)]);
       if (!listingSnapshot.exists) throw new GameError("Listing not found.", "not-found");
       const listing = listingSnapshot.data();
@@ -224,13 +224,13 @@ export const buyPet = onCall(CALLABLE_OPTIONS, async (request) => {
   const at = Date.now();
   try {
     const buyerState = await db.runTransaction(async (transaction) => {
-      const listingRef = db.doc("marketListings", listingId);
+      const listingRef = db.collection("marketListings").doc(listingId);
       const listingSnapshot = await transaction.get(listingRef);
       if (!listingSnapshot.exists) throw new GameError("That listing has already sold.", "not-found");
       const listing = listingSnapshot.data();
       if (listing.sellerUid === buyer.uid) throw new GameError("You cannot buy your own listing.");
-      const buyerRef = db.doc("players", buyer.uid);
-      const sellerRef = db.doc("players", listing.sellerUid);
+      const buyerRef = db.collection("players").doc(buyer.uid);
+      const sellerRef = db.collection("players").doc(listing.sellerUid);
       const [buyerSnapshot, sellerSnapshot] = await Promise.all([transaction.get(buyerRef), transaction.get(sellerRef)]);
       if (!buyerSnapshot.exists || !sellerSnapshot.exists) throw new GameError("A marketplace account is unavailable.", "not-found");
       const nextBuyer = receiveMarketPet(buyerSnapshot.data(), listing.pet, Number(listing.price), at);

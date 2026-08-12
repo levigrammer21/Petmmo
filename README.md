@@ -1,6 +1,6 @@
 # Pet Idle MMO
 
-Version 0.2.0 is a complete pet-driven idle MMO build for a small private group.
+Version 0.2.1 is a complete pet-driven idle MMO build for a small private group.
 
 The game runs directly from GitHub Pages. Firebase supplies Email/Password and Google authentication, authoritative saves, real-time marketplace listings, leaderboards, and secure game actions.
 
@@ -41,7 +41,7 @@ All application and Firebase files remain directly in the repository root. `pets
 
 Important files:
 
-- `index.html`, `styles.css`, `app.js` — web game
+- `index.html`, `styles.css`, `app.js`, `auth-errors.js` — web game
 - `game-data.js`, `game-engine.js` — content and deterministic rules
 - `firebase-client.js`, `firebase-config.js` — browser Firebase integration
 - `functions.js` — authoritative backend
