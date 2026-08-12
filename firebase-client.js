@@ -13,6 +13,7 @@ import {
   publicProfile,
   receiveMarketCoins,
   receiveMarketPet,
+  resolveAreaCombat,
   resolveCombat,
   restoreCancelledListing,
   sacrificePet,
@@ -59,6 +60,7 @@ function actionResult(action, state, payload, at) {
   if (action === "buyStoreItem") return { state: buyStoreItem(state, payload, at) };
   if (action === "useHealingItem") return useHealingItem(state, payload, at);
   if (action === "resolveCombat") return resolveCombat(state, payload, Math.random, at);
+  if (action === "resolveAreaCombat") return resolveAreaCombat(state, payload, Math.random, at);
   if (action === "attemptCapture") return attemptCapture(state, payload.mealId, Math.random, at);
   if (action === "declineCapture") return { state: declineCapture(state, at) };
   if (action === "sacrificePet") return sacrificePet(state, payload, at);

@@ -1,6 +1,6 @@
 {
-  "name": "pet-idle-mmo",
-  "version": "0.6.0",
+  "name": "wilderden",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {

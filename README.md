@@ -1,6 +1,6 @@
-# Pet Idle MMO
+# Wilderden
 
-Version 0.6.0 is a mobile-first pet idle MMO for a trusted private group. It runs from GitHub Pages and uses Firebase's no-billing Spark plan for Email/Password and Google sign-in, private saves, the shared marketplace, and leaderboards.
+Version 0.7.0 is a mobile-first pet idle RPG/MMO for a trusted private group. It runs from GitHub Pages and uses Firebase's no-billing Spark plan for Email/Password and Google sign-in, private saves, the shared marketplace, and leaderboards.
 
 No Cloud Functions, Firebase Storage, server, or Blaze billing plan is required.
 
@@ -8,23 +8,24 @@ No Cloud Functions, Firebase Storage, server, or Blaze billing plan is required.
 
 1. Follow [FIREBASE_SETUP.md](FIREBASE_SETUP.md).
 2. Follow [GITHUB_SETUP.md](GITHUB_SETUP.md).
-3. Open the published GitHub Pages URL and sign in. Existing v0.5 saves migrate automatically when first loaded.
+3. Open the published GitHub Pages URL and sign in. Existing saves migrate automatically when first loaded.
 
 ## Complete gameplay systems
 
 - Playable Keeper with one personal idle timer plus up to six simultaneous pet assignments
-- Dedicated Skills screen for all 14 leveled disciplines, including separate Melee, Ranged, and Magic progression
-- Keeper-only or mixed-party live combat with attack timers, health bars, hit splats, abilities, and battle log
+- RPG-style Skill Book for all 14 leveled disciplines, including separate Melee, Ranged, and Magic progression
+- Weighted area encounters with Auto-hunt, Auto-eat, Auto-harvest, attack timers, health bars, hit splats, abilities, and battle log
 - Persistent Keeper and pet injuries with food and tonic healing; downed pets are never lost
-- Equipment screen, category-filtered Inventory & Storage, starter General Store, and craftable level-20 gear
+- Equipment screen, compact icon-grid Inventory & Storage, starter General Store, and craftable level-20 gear
 - 50 original combat-capable species with unique production artwork
 - Pet XP from every action, combat-stat growth from levels, 1–10 aptitude-based speed plus 25% burst yield, sacrifice XP, and five-star Condensing
 - Condensing from two identical max-level pets into a level-1 next-star pet with an exact 10% stat bump per added star
 - Woodcutting, Mining, Foraging, Fishing, Mischief, Processing, Cooking, Crafting, and Construction loops for Keeper and pets
-- Cooked-food capture attempts, failed/declined capture Processing, no automatic pet drops
+- Cooked-food capture attempts, failed/declined/auto-harvest Processing, material and coin recovery, and no automatic pet drops
+- Synthesized mobile-friendly sound effects for taps, attacks, abilities, criticals, healing, loot, victory, and defeat
 - Permanent buildings, den and stack capacity, asynchronous dungeons, and chained dungeon crafting
 - Unlimited pet trading with a 2% listing fee
-- Eight-hour offline settlement with live progress bars and level markers
+- Eight-hour offline settlement with live timers, progress bars, exact XP, and levels
 
 The exact mechanical rules are in [GAME_DESIGN.md](GAME_DESIGN.md).
 
@@ -32,7 +33,7 @@ The exact mechanical rules are in [GAME_DESIGN.md](GAME_DESIGN.md).
 
 Every shippable file stays directly in the repository root. `pets/` is the only content folder.
 
-- `index.html`, `styles.css`, `app.js`, `auth-errors.js` — web game
+- `index.html`, `styles.css`, `app.js`, `sound-manager.js`, `auth-errors.js`, `logo.svg` — web game and branding
 - `game-data.js`, `game-engine.js` — content and gameplay rules
 - `firebase-client.js`, `firebase-config.js` — authentication, saves, and shared data
 - `firestore.rules`, `firestore.indexes.json` — free Firebase backend protection

@@ -4,7 +4,7 @@ The launch bestiary was produced in built-in image-generation mode, using the ap
 
 ## Shared production prompt
 
-> Create one brand-new original creature asset for the web game Pet Idle MMO, using the supplied Ash Raccoon only as a visual style benchmark—not as anatomy. Polished clean 2D creature-collector illustration, appealing “almost cute” rather than babyish or chibi, confident combat-ready three-quarter pose, full body fully inside frame, strong readable silhouette, expressive face, dark tapered ink outlines, restrained two-step cel shading with subtle painterly texture, sophisticated natural palette plus a restrained elemental accent. One creature only. Anatomically coherent. No clothing, armor, tools, saddle, equipment, logo, text, UI, frame, scenery, ground, cast shadow, extra characters, duplicate anatomy, or cropped limbs. Place on a flat pure white background for clean removal.
+> Create one brand-new original creature asset for the web game Wilderden, using the supplied Ash Raccoon only as a visual style benchmark—not as anatomy. Polished clean 2D creature-collector illustration, appealing “almost cute” rather than babyish or chibi, confident combat-ready three-quarter pose, full body fully inside frame, strong readable silhouette, expressive face, dark tapered ink outlines, restrained two-step cel shading with subtle painterly texture, sophisticated natural palette plus a restrained elemental accent. One creature only. Anatomically coherent. No clothing, armor, tools, saddle, equipment, logo, text, UI, frame, scenery, ground, cast shadow, extra characters, duplicate anatomy, or cropped limbs. Place on a flat pure white background for clean removal.
 
 ## Species briefs
 

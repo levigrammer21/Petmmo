@@ -57,7 +57,7 @@ export function createPetInstance(speciesId, source = "starter") {
 export function createInitialState(displayName = "Keeper") {
   const skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, { level: 1, xp: 0 }]));
   const state = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     gameVersion: GAME_VERSION,
     profile: {
       displayName: String(displayName || "Keeper").slice(0, 28),
@@ -96,11 +96,19 @@ export function createInitialState(displayName = "Keeper") {
     remains: [],
     dungeonRuns: [],
     pendingEncounter: null,
+    combatPreferences: {
+      regionId: "greenhollow",
+      autoHunt: true,
+      autoEat: true,
+      autoHarvest: true,
+      mealId: "camp-skewer",
+      includeKeeper: true,
+    },
     discoveries: ["ash-raccoon"],
     journal: [
       { id: randomId("log"), at: nowMs(), text: "The den is ready. Your Ash Raccoon is waiting for its first assignment." },
     ],
-    stats: { actions: 0, keeperActions: 0, victories: 0, captures: 1, processed: 0, dungeonClears: 0, trades: 0 },
+    stats: { actions: 0, keeperActions: 0, victories: 0, captures: 1, processed: 0, processingCoins: 0, dungeonClears: 0, trades: 0 },
   };
   state.profile.maxHp = keeperStats(state).maxHp;
   state.profile.currentHp = state.profile.maxHp;
@@ -125,6 +133,7 @@ export function normalizeState(raw, displayName = "Keeper") {
     journal: Array.isArray(raw.journal) ? raw.journal.slice(-80) : base.journal,
     discoveries: Array.isArray(raw.discoveries) ? raw.discoveries : base.discoveries,
     stats: { ...base.stats, ...(raw.stats || {}) },
+    combatPreferences: { ...base.combatPreferences, ...(raw.combatPreferences || {}) },
     keeperActivity: raw.keeperActivity && typeof raw.keeperActivity === "object" ? raw.keeperActivity : null,
   };
   state.profile.denCapacity = 12 + Number(state.buildings.den || 0) * 5;
@@ -142,7 +151,7 @@ export function normalizeState(raw, displayName = "Keeper") {
     }
     state.inventory["field-ration"] = Math.max(5, Number(state.inventory["field-ration"] || 0));
   }
-  state.schemaVersion = 2;
+  state.schemaVersion = 3;
   state.gameVersion = GAME_VERSION;
   return state;
 }
@@ -518,9 +527,12 @@ function settleKeeperActivity(state, at, random, events) {
     if (target) {
       const facilityScale = state.buildings.smokehouse ? 1.1 : 1;
       for (const [itemId, amount] of Object.entries(target.materials || {})) addItem(state, itemId, Math.max(1, Math.floor(Number(amount) * facilityScale)));
+      const coins = processingCoinReward(target);
+      state.profile.coins += coins;
+      state.stats.processingCoins = Number(state.stats.processingCoins || 0) + coins;
       grantSkillXp(state, "processing", 22 + (REGIONS_INDEX[target.region] || 0) * 28);
       state.stats.processed += 1;
-      events.push({ type: "keeper", text: `You finished Processing ${target.name}.` });
+      events.push({ type: "keeper", text: `You finished Processing ${target.name} and recovered ${coins} coins.` });
     }
   } else {
     state.keeperActivity = null;
@@ -560,18 +572,31 @@ function finishAssignment(state, assignment, pet, random, events) {
     const burst = aptitudeYield(aptitude, random);
     const facilityScale = state.buildings.smokehouse ? 1.1 : 1;
     for (const [itemId, amount] of Object.entries(target.materials || {})) addItem(state, itemId, Math.max(1, Math.floor(Number(amount) * burst * facilityScale)));
+    const coins = processingCoinReward(target, 1 + Math.max(0, burst - 1) * 0.3);
+    state.profile.coins += coins;
+    state.stats.processingCoins = Number(state.stats.processingCoins || 0) + coins;
     const xp = 22 + (REGIONS_INDEX[target.region] || 0) * 28;
     grantSkillXp(state, "processing", xp);
     grantSkillXp(state, "petMastery", Math.floor(xp * 0.2));
     grantPetXp(state, pet, Math.floor(xp * 0.72));
     state.stats.processed += 1;
-    events.push({ type: "complete", text: `${processor.name} finished Processing ${target.name}.` });
+    events.push({ type: "complete", text: `${processor.name} finished Processing ${target.name} and recovered ${coins} coins.` });
   }
   pet.status = "idle";
 }
 
 const REGIONS_INDEX = { greenhollow: 0, copperwood: 1, sunscar: 2, stormreach: 3, starfall: 4 };
 const HUNT_TIER_OFFSET = { Common: 0, Uncommon: 5, Rare: 12, "Area Boss": 19 };
+const PROCESSING_TIER_COINS = { Common: 0, Uncommon: 5, Rare: 16, "Area Boss": 42, Dungeon: 70 };
+const HUNT_TIER_WEIGHT = { Common: 12, Uncommon: 5, Rare: 2, "Area Boss": 1 };
+
+export function processingCoinReward(speciesOrId, yieldMultiplier = 1) {
+  const species = typeof speciesOrId === "string" ? SPECIES_BY_ID[speciesOrId] : speciesOrId;
+  if (!species) return 0;
+  const regionValue = (REGIONS_INDEX[species.region] || 0) * 9;
+  const base = 5 + regionValue + Number(PROCESSING_TIER_COINS[species.acquisition] || 0);
+  return Math.max(1, Math.round(base * Math.max(1, Number(yieldMultiplier || 1))));
+}
 
 export function combatRequirement(speciesOrId) {
   const species = typeof speciesOrId === "string" ? SPECIES_BY_ID[speciesOrId] : speciesOrId;
@@ -682,7 +707,7 @@ function damageRoll(attacker, defender, abilityPower, random) {
   return { amount: Math.max(1, Math.round(raw - defender.defense * 0.42)), critical, affinity };
 }
 
-export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeeper = true, combatStyle = "melee" }, random = Math.random, at = nowMs()) {
+export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeeper = true, combatStyle = "melee", autoEat = true }, random = Math.random, at = nowMs()) {
   const state = normalizeState(rawState);
   if (state.pendingEncounter) throw new GameError("Resolve the current capture opportunity first.");
   const ids = [...new Set(Array.isArray(petIds) ? petIds : [])];
@@ -697,8 +722,8 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeep
   const requiredCombat = combatRequirement(enemySpecies);
   if (skillLevel(state, "combat") < requiredCombat) throw new GameError(`${enemySpecies.name} requires Combat level ${requiredCombat}.`);
   const keeperCombatant = includeKeeper ? combatantFromKeeper(state, combatStyle) : null;
-  if (!ITEMS[mealId] || ITEMS[mealId].category !== "meal") throw new GameError("Choose a combat meal.");
-  if (Number(state.inventory[mealId] || 0) < 1) throw new GameError(`You do not have any ${ITEMS[mealId].name}.`);
+  if (autoEat && (!ITEMS[mealId] || ITEMS[mealId].category !== "meal")) throw new GameError("Choose a combat meal for Auto-eat.");
+  if (autoEat && Number(state.inventory[mealId] || 0) < 1) throw new GameError(`You do not have any ${ITEMS[mealId].name}.`);
 
   const team = [...(keeperCombatant ? [keeperCombatant] : []), ...pets.map(combatantFromPet)];
   if (!team.some((entry) => entry.alive)) throw new GameError("Your chosen combatants are downed. Heal them before combat.");
@@ -739,7 +764,7 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeep
       target.alive = target.hp > 0;
       events.push({ time, type: "hit", sourceId: enemy.id, targetId: target.id, amount: hit.amount, critical: hit.critical, strong: hit.affinity > 1, ability: usesAbility ? enemy.ability.name : null, targetHp: target.hp, targetMaxHp: target.maxHp });
 
-      if (target.alive && target.hp / target.maxHp < 0.38 && Number(state.inventory[mealId] || 0) > 0) {
+      if (autoEat && target.alive && target.hp / target.maxHp < 0.38 && Number(state.inventory[mealId] || 0) > 0) {
         removeItems(state, { [mealId]: 1 });
         const healed = Math.min(target.maxHp - target.hp, Number(ITEMS[mealId].heal || 10));
         target.hp += healed;
@@ -772,6 +797,47 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeep
   }
   events.push({ time: time + 80, type: "end", victory, enemyHp: enemy.hp, team: team.map((entry) => ({ id: entry.id, hp: entry.hp, maxHp: entry.maxHp })) });
   return { state, battle: { victory, duration: time, events, enemy: { id: enemy.id, speciesId, name: enemy.name, affinity: enemy.affinity, level: enemy.level, ability: enemy.ability.name, maxHp: enemy.maxHp, startingHp: enemy.initialHp, attackInterval: attackInterval(enemy.speed), kind: "enemy" }, team: team.map((entry) => ({ id: entry.id, name: entry.name, speciesId: entry.speciesId, level: entry.level, ability: entry.ability.name, maxHp: entry.maxHp, startingHp: entry.initialHp, attackInterval: attackInterval(entry.speed), kind: entry.kind, combatStyle: entry.combatStyle })) } };
+}
+
+export function listAreaOpponents(state, regionId) {
+  return listAvailableOpponents(state).filter((species) => species.region === regionId && species.acquisition !== "Dungeon");
+}
+
+function chooseAreaOpponent(pool, random) {
+  const weighted = pool.map((species) => ({ species, weight: Number(HUNT_TIER_WEIGHT[species.acquisition] || 1) }));
+  const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = random() * total;
+  for (const entry of weighted) {
+    roll -= entry.weight;
+    if (roll <= 0) return entry.species;
+  }
+  return weighted.at(-1)?.species;
+}
+
+export function resolveAreaCombat(rawState, {
+  petIds,
+  regionId = "greenhollow",
+  mealId = "",
+  includeKeeper = true,
+  combatStyle = "melee",
+  autoHunt = true,
+  autoEat = true,
+  autoHarvest = true,
+}, random = Math.random, at = nowMs()) {
+  const state = normalizeState(rawState);
+  const pool = listAreaOpponents(state, regionId);
+  if (!pool.length) throw new GameError("No enemies in that area are available at your current Combat level.");
+  const opponent = chooseAreaOpponent(pool, random);
+  state.combatPreferences = { regionId, autoHunt: Boolean(autoHunt), autoEat: Boolean(autoEat), autoHarvest: Boolean(autoHarvest), mealId, includeKeeper: Boolean(includeKeeper) };
+  const result = resolveCombat(state, { petIds, speciesId: opponent.id, mealId, includeKeeper, combatStyle, autoEat }, random, at);
+  result.battle.regionId = regionId;
+  result.battle.encounterPoolSize = pool.length;
+  result.battle.autoHarvested = false;
+  if (result.battle.victory && autoHarvest) {
+    result.state = declineCapture(result.state, at + 1);
+    result.battle.autoHarvested = true;
+  }
+  return result;
 }
 
 function addRemains(state, speciesId, source = "combat") {

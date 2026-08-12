@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 — Wilderden identity and passive wilds
+
+- Renamed the game to Wilderden and added a scalable original den-and-tail logo.
+- Replaced exact enemy selection with weighted, level-gated area encounters.
+- Added Auto-hunt, Auto-eat, and Auto-harvest controls for continuous combat.
+- Auto-harvested victories now enter the real Processing queue; Processing awards materials and coins.
+- Rebuilt Inventory as a compact, colored icon grid with item detail actions.
+- Rebuilt Skills as an RPG-style skill book with prominent levels and exact XP remaining.
+- Added synthesized UI, attack, ability, critical, healing, loot, victory, and defeat sounds with a persistent toggle.
+- Expanded the interface palette while preserving the clean, readable mobile layout.
+
 ## 0.6.0 — Playable Keeper and full progression rebuild
 
 - Made the Keeper a playable worker across gathering, Mischief, Cooking, Crafting, Processing, and Construction with one independent idle timer alongside six pet assignments.

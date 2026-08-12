@@ -38,14 +38,15 @@
 - Up to three pets may join the Keeper. Pet fighters occupy ordinary active slots during combat; the Keeper must stop a personal assignment before fighting.
 - Affinity advantage modifies damage by 20%; disadvantage reduces it. Signature abilities fire automatically on cooldown.
 - Combat health persists afterward. Zero health means downed, never deleted: downed pets cannot work, fight, or enter dungeons until healed. Food or Pet Tonics heal pets; food or Keeper Tonics heal the Keeper.
-- Combat meals heal injured fighters automatically when they fall below the threshold.
-- Defeating a wild pet creates no automatic loot. Victory creates exactly one capture-or-Processing decision.
+- Area selection determines a weighted encounter pool; the exact enemy is discovered automatically. Common enemies appear often, while rare creatures and Area Bosses stay scarce.
+- Auto-hunt repeats encounters after each finished victory. Auto-eat is optional and uses the chosen meal when a fighter falls below the threshold.
+- Defeating a wild pet creates no automatic loot. With Auto-harvest off, victory creates exactly one capture-or-Processing decision. Auto-harvest sends that defeated enemy to the real Processing queue so Auto-hunt can continue.
 - A failed capture consumes its cooked meal and sends the defeated pet to Processing. Capturing requires open den space.
 - Common, Uncommon, Rare, and Area Boss hunts have increasing Combat gates. Dungeon-only species cannot be directly hunted.
 
 ## Processing, Construction, and dungeons
 
-- Processing may be completed personally or by one assigned pet. Species have distinct meat and material tables; pet Processing aptitude changes timer and burst yield.
+- Processing may be completed personally or by one assigned pet. Species have distinct material and coin values; pet Processing aptitude changes timer, burst yield, and bonus coin recovery.
 - Den expansions add pet capacity, Storage expansions add stack capacity, and one-time buildings add small permanent bonuses.
 - Construction requires account Construction level, materials, and time. A pet assignment also consumes food; personal construction does not.
 - Dungeons are asynchronous probability expeditions, not live combat, and do not consume ordinary active slots.

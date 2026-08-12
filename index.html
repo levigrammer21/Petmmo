@@ -3,9 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#263f35" />
-    <meta name="description" content="A pet-driven idle MMO about gathering, cooking, combat, capturing, dungeons, construction, and trade." />
-    <title>Pet Idle MMO</title>
+    <meta name="theme-color" content="#176157" />
+    <meta name="description" content="Wilderden is a pet-driven idle RPG about gathering, area hunting, cooking, capturing, dungeons, construction, and trade." />
+    <title>Wilderden</title>
+    <link rel="icon" href="logo.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -21,13 +22,13 @@
       <div class="auth-panel">
         <div class="auth-panel-inner">
           <div class="brand-lockup">
-            <span class="brand-mark">PI</span>
+            <img class="brand-mark" src="logo.svg" alt="" />
             <div>
               <p class="eyebrow">Your den is waiting</p>
-              <h1 id="auth-title">Pet Idle MMO</h1>
+              <h1 id="auth-title">Wilderden</h1>
             </div>
           </div>
-          <p class="auth-copy">Raise a working den, prepare meals, hunt wild pets, build permanent facilities, and send specialized teams into asynchronous dungeons.</p>
+          <p class="auth-copy">Build a working den, hunt the wilds, raise remarkable pets, and let every skill keep growing while life carries on.</p>
 
           <div class="auth-proof" aria-label="Game highlights">
             <span><strong>50</strong> species</span>
@@ -68,9 +69,9 @@
       <header class="topbar">
         <button id="mobile-menu" class="icon-button mobile-only" type="button" aria-label="Open navigation">Menu</button>
         <div class="top-brand">
-          <span class="brand-mark small">PI</span>
+          <img class="brand-mark small" src="logo.svg" alt="" />
           <div>
-            <strong>Pet Idle MMO</strong>
+            <strong>Wilderden</strong>
             <span>v<span data-version></span></span>
           </div>
         </div>
@@ -80,6 +81,7 @@
             <strong id="keeper-name">Keeper</strong>
             <span id="connection-state">Shared world connected</span>
           </div>
+          <button id="sound-toggle" class="button compact ghost sound-toggle" type="button" aria-pressed="true">Sound On</button>
           <button id="account-action" class="button compact ghost" type="button">Exit</button>
         </div>
       </header>

@@ -16,6 +16,7 @@ import {
   prepareMarketListing,
   receiveMarketCoins,
   receiveMarketPet,
+  resolveAreaCombat,
   resolveCombat,
   settleState,
   startActivity,
@@ -237,7 +238,7 @@ test("old saves migrate to all Keeper systems without losing progress", () => {
   delete legacy.pets[0].currentHp;
   legacy.profile.coins = 999;
   const migrated = normalizeState(legacy);
-  assert.equal(migrated.schemaVersion, 2);
+  assert.equal(migrated.schemaVersion, 3);
   assert.equal(migrated.skills.melee.level, 1);
   assert.equal(migrated.equipment.weapon, "wooden-sword");
   assert.equal(migrated.inventory["wooden-sword"], 1);
@@ -284,6 +285,36 @@ test("rare hunts are level-gated and dungeon pets cannot be hunted directly", ()
     speciesId: "prismatic-wyrm",
     mealId: "camp-skewer",
   }), /only be encountered in a dungeon/);
+});
+
+test("area hunting chooses a random eligible enemy and auto-harvests victories", () => {
+  const state = createInitialState("Area Hunter");
+  state.pets[0].level = 20;
+  const result = resolveAreaCombat(state, {
+    petIds: [state.pets[0].id],
+    regionId: "greenhollow",
+    mealId: "camp-skewer",
+    autoEat: true,
+    autoHunt: true,
+    autoHarvest: true,
+  }, () => 0.02, 2_600_000);
+  assert.equal(result.battle.regionId, "greenhollow");
+  assert.equal(result.battle.victory, true);
+  assert.equal(result.battle.autoHarvested, true);
+  assert.equal(result.state.pendingEncounter, null);
+  assert.equal(result.state.remains.length, 1);
+  assert.equal(result.state.combatPreferences.autoHunt, true);
+});
+
+test("processing grants coins alongside materials", () => {
+  const at = 2_700_000;
+  let state = createInitialState("Coin Processor");
+  const startingCoins = state.profile.coins;
+  state.remains.push({ id: "coin-remains", speciesId: "moss-hare", source: "combat", acquiredAt: at });
+  state = startProcessing(state, { petId: state.pets[0].id, remainId: "coin-remains", mealId: "camp-skewer" }, at);
+  ({ state } = settleState(state, state.activities[0].endAt + 1, () => 0.9));
+  assert.ok(state.profile.coins > startingCoins);
+  assert.equal(state.stats.processingCoins, state.profile.coins - startingCoins);
 });
 
 test("capture and marketplace honor den safety checks", () => {
@@ -392,7 +423,7 @@ test("the Spark-plan client has no paid Cloud Functions dependency", async () =>
   assert.equal(deployPackage.scripts["deploy:backend"], "firebase deploy --only firestore:rules,firestore:indexes");
 });
 
-test("the UI exposes live work timers and non-animated combat feedback", async () => {
+test("the UI exposes live work timers, RPG skills, compact inventory, and non-animated combat feedback", async () => {
   const source = await readFile(new URL("./app.js", import.meta.url), "utf8");
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
   assert.match(source, /COMBAT_MIN_PLAYBACK_MS = 14000/);
@@ -402,7 +433,11 @@ test("the UI exposes live work timers and non-animated combat feedback", async (
   assert.match(source, /damage-number/);
   assert.doesNotMatch(source, /classList\.add\("attacking"\)/);
   assert.doesNotMatch(styles, /@keyframes strike/);
-  assert.match(styles, /\.level-marker-row/);
+  assert.match(styles, /\.skill-level-medallion/);
+  assert.match(styles, /\.compact-storage/);
+  assert.match(source, /combat-auto-hunt/);
+  assert.match(source, /combat-auto-eat/);
+  assert.match(source, /combat-auto-harvest/);
 });
 
 test("Firestore rules keep saves private while enabling the family market", async () => {
