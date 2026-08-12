@@ -1,4 +1,5 @@
 import {
+  ACTION_TIME_SCALE,
   ACTIVITY_BY_ID,
   BUILDING_BY_ID,
   DUNGEON_BY_ID,
@@ -6,9 +7,11 @@ import {
   ITEMS,
   MAX_ACTIVE_PETS,
   MAX_COMBAT_PETS,
+  MAX_IDLE_HOURS,
   OFFLINE_CAP_MS,
   PET_SPECIES,
   RECIPE_BY_ID,
+  REGIONS,
   SKILLS,
   SPECIES_BY_ID,
   STORE_ITEMS,
@@ -57,12 +60,13 @@ export function createPetInstance(speciesId, source = "starter") {
 export function createInitialState(displayName = "Keeper") {
   const skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, { level: 1, xp: 0 }]));
   const state = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     gameVersion: GAME_VERSION,
     profile: {
       displayName: String(displayName || "Keeper").slice(0, 28),
       createdAt: nowMs(),
       lastSeenAt: nowMs(),
+      lastRegenAt: nowMs(),
       coins: 160,
       activeLimit: MAX_ACTIVE_PETS,
       denCapacity: 12,
@@ -95,6 +99,8 @@ export function createInitialState(displayName = "Keeper") {
     equipment: { weapon: "wooden-sword", tool: "copper-axe", body: "cloth-tunic", feet: "leather-boots" },
     remains: [],
     dungeonRuns: [],
+    combatPatrol: null,
+    lastCombatReport: null,
     pendingEncounter: null,
     combatPreferences: {
       regionId: "greenhollow",
@@ -102,13 +108,13 @@ export function createInitialState(displayName = "Keeper") {
       autoEat: true,
       autoHarvest: true,
       mealId: "camp-skewer",
-      includeKeeper: true,
+      includeKeeper: false,
     },
     discoveries: ["ash-raccoon"],
     journal: [
       { id: randomId("log"), at: nowMs(), text: "The den is ready. Your Ash Raccoon is waiting for its first assignment." },
     ],
-    stats: { actions: 0, keeperActions: 0, victories: 0, captures: 1, processed: 0, processingCoins: 0, dungeonClears: 0, trades: 0 },
+    stats: { actions: 0, keeperActions: 0, victories: 0, captures: 1, processed: 0, processingCoins: 0, dungeonClears: 0, trades: 0, patrols: 0, patrolBattles: 0 },
   };
   state.profile.maxHp = keeperStats(state).maxHp;
   state.profile.currentHp = state.profile.maxHp;
@@ -135,6 +141,8 @@ export function normalizeState(raw, displayName = "Keeper") {
     stats: { ...base.stats, ...(raw.stats || {}) },
     combatPreferences: { ...base.combatPreferences, ...(raw.combatPreferences || {}) },
     keeperActivity: raw.keeperActivity && typeof raw.keeperActivity === "object" ? raw.keeperActivity : null,
+    combatPatrol: raw.combatPatrol && typeof raw.combatPatrol === "object" ? raw.combatPatrol : null,
+    lastCombatReport: raw.lastCombatReport && typeof raw.lastCombatReport === "object" ? raw.lastCombatReport : null,
   };
   state.profile.denCapacity = 12 + Number(state.buildings.den || 0) * 5;
   state.profile.storageCapacity = 40 + Number(state.buildings.storage || 0) * 20;
@@ -145,13 +153,39 @@ export function normalizeState(raw, displayName = "Keeper") {
     const maxHp = scaledPetStats(pet).hp;
     return { ...pet, currentHp: clamp(Number(pet.currentHp ?? maxHp), 0, maxHp), status: pet.status || "idle" };
   });
+  state.activities = state.activities.map((assignment) => {
+    if (!["activity", "processing-shift"].includes(assignment.kind)) return assignment;
+    const startedAt = Number(assignment.startedAt || assignment.lastAt || state.profile.lastSeenAt || nowMs());
+    return {
+      ...assignment,
+      startedAt,
+      lastAt: Number(assignment.lastAt || startedAt),
+      plannedEndAt: Number(assignment.plannedEndAt || startedAt + MAX_IDLE_HOURS * 60 * 60 * 1000),
+    };
+  });
+  if (state.keeperActivity?.kind === "keeper") {
+    const startedAt = Number(state.keeperActivity.startedAt || state.keeperActivity.lastAt || state.profile.lastSeenAt || nowMs());
+    state.keeperActivity = {
+      ...state.keeperActivity,
+      startedAt,
+      lastAt: Number(state.keeperActivity.lastAt || startedAt),
+      plannedEndAt: Number(state.keeperActivity.plannedEndAt || startedAt + MAX_IDLE_HOURS * 60 * 60 * 1000),
+    };
+  }
+  const patrolIds = new Set(state.combatPatrol?.petIds || []);
+  state.pets = state.pets.map((pet) => {
+    if (patrolIds.has(pet.id)) return { ...pet, status: `combat:${state.combatPatrol.id}` };
+    if (String(pet.status || "").startsWith("combat:")) return { ...pet, status: "idle" };
+    return pet;
+  });
   if (Number(raw.schemaVersion || 1) < 2) {
     for (const itemId of ["wooden-sword", "copper-axe", "cloth-tunic", "leather-boots", "pet-tonic", "keeper-tonic"]) {
       state.inventory[itemId] = Math.max(1, Number(state.inventory[itemId] || 0));
     }
     state.inventory["field-ration"] = Math.max(5, Number(state.inventory["field-ration"] || 0));
   }
-  state.schemaVersion = 3;
+  state.profile.lastRegenAt = Number(raw.profile?.lastRegenAt || raw.profile?.lastSeenAt || state.profile.lastSeenAt || nowMs());
+  state.schemaVersion = 4;
   state.gameVersion = GAME_VERSION;
   return state;
 }
@@ -268,35 +302,32 @@ function requireActiveSpace(state, amount = 1) {
   if (activePetCount(state) + amount > MAX_ACTIVE_PETS) throw new GameError(`Only ${MAX_ACTIVE_PETS} pets can be active at once.`);
 }
 
-function consumeWorkingMeal(state, mealId) {
-  const meal = ITEMS[mealId];
-  if (!meal || meal.category !== "meal") throw new GameError("Choose a cooked meal.");
-  removeItems(state, { [mealId]: 1 });
-  const nutritionBoost = state.buildings?.["mess-hall"] ? 1.05 : 1;
-  return Math.max(1, Math.floor(meal.nutrition * nutritionBoost));
+function idleDurationMs(durationHours = 2) {
+  const hours = clamp(Number(durationHours) || 2, 1, MAX_IDLE_HOURS);
+  return Math.round(hours * 60 * 60 * 1000);
 }
 
 function validateLevelRequirements(state, pet, task) {
   if (skillLevel(state, task.skill) < Number(task.level || 1)) throw new GameError(`${task.name} requires ${task.skill} level ${task.level}.`);
 }
 
-export function startActivity(rawState, { petId, activityId, mealId }, at = nowMs()) {
+export function startActivity(rawState, { petId, activityId, durationHours = 2 }, at = nowMs()) {
   const state = normalizeState(rawState);
   const task = ACTIVITY_BY_ID[activityId];
   if (!task) throw new GameError("Unknown activity.", "not-found");
   const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   validateLevelRequirements(state, pet, task);
-  const nutrition = consumeWorkingMeal(state, mealId);
   const id = randomId("work");
-  const durationMs = petActionDuration(task, SPECIES_BY_ID[pet.speciesId], mealId);
-  state.activities.push({ id, kind: "activity", taskId: activityId, petId, mealId, nutrition, startedAt: at, lastAt: at, durationMs, completedActions: 0, status: "running" });
+  const durationMs = petActionDuration(task, SPECIES_BY_ID[pet.speciesId]);
+  const plannedEndAt = at + idleDurationMs(durationHours);
+  state.activities.push({ id, kind: "activity", taskId: activityId, petId, startedAt: at, lastAt: at, plannedEndAt, durationMs, completedActions: 0, status: "running" });
   pet.status = `activity:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started ${task.name}.`, at);
   return state;
 }
 
-export function startRecipe(rawState, { petId, recipeId, mealId }, at = nowMs()) {
+export function startRecipe(rawState, { petId, recipeId }, at = nowMs()) {
   const state = normalizeState(rawState);
   const recipe = RECIPE_BY_ID[recipeId];
   if (!recipe) throw new GameError("Unknown recipe.", "not-found");
@@ -304,10 +335,9 @@ export function startRecipe(rawState, { petId, recipeId, mealId }, at = nowMs())
   requireActiveSpace(state);
   validateLevelRequirements(state, pet, recipe);
   removeItems(state, recipe.ingredients);
-  if (recipe.skill !== "cooking") consumeWorkingMeal(state, mealId);
   const id = randomId("recipe");
-  const durationMs = petActionDuration(recipe, SPECIES_BY_ID[pet.speciesId], mealId);
-  state.activities.push({ id, kind: "recipe", taskId: recipeId, petId, mealId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
+  const durationMs = petActionDuration(recipe, SPECIES_BY_ID[pet.speciesId]);
+  state.activities.push({ id, kind: "recipe", taskId: recipeId, petId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
   pet.status = `recipe:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started ${recipe.name}.`, at);
   return state;
@@ -336,7 +366,7 @@ function constructionXp(state, building) {
   return Math.max(40, Math.round(Number(building.duration || 20) * 1.8), Math.ceil(xpForNextLevel(currentLevel, "skill") * 0.55));
 }
 
-export function startConstruction(rawState, { petId, buildingId, mealId }, at = nowMs()) {
+export function startConstruction(rawState, { petId, buildingId }, at = nowMs()) {
   const state = normalizeState(rawState);
   const building = BUILDING_BY_ID[buildingId];
   if (!building) throw new GameError("Unknown structure.", "not-found");
@@ -347,30 +377,45 @@ export function startConstruction(rawState, { petId, buildingId, mealId }, at = 
   const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   removeItems(state, scaledBuildingCosts(building, current));
-  consumeWorkingMeal(state, mealId);
   const id = randomId("build");
   const task = { ...building, skill: "construction", level: requiredLevel };
-  const durationMs = petActionDuration(task, SPECIES_BY_ID[pet.speciesId], mealId);
-  state.activities.push({ id, kind: "construction", taskId: buildingId, petId, mealId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
+  const durationMs = petActionDuration(task, SPECIES_BY_ID[pet.speciesId]);
+  state.activities.push({ id, kind: "construction", taskId: buildingId, petId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
   pet.status = `construction:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started building ${building.name}.`, at);
   return state;
 }
 
-export function startProcessing(rawState, { petId, remainId, mealId }, at = nowMs()) {
+export function startProcessing(rawState, { petId, remainId }, at = nowMs()) {
   const state = normalizeState(rawState);
   const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   const remains = state.remains.find((entry) => entry.id === remainId);
   if (!remains) throw new GameError("Those remains are no longer available.", "not-found");
-  consumeWorkingMeal(state, mealId);
   state.remains = state.remains.filter((entry) => entry.id !== remainId);
   const id = randomId("process");
-  const aptitude = Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes.processing || 1);
-  const durationMs = Math.max(4000, Math.round(30000 * Math.pow(10 / aptitude, 1.1)));
-  state.activities.push({ id, kind: "processing", taskId: remains.speciesId, petId, mealId, startedAt: at, endAt: at + durationMs, status: "running" });
+  const durationMs = processingCycleDuration(pet);
+  state.activities.push({ id, kind: "processing", taskId: remains.speciesId, petId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
   pet.status = `processing:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started Processing ${SPECIES_BY_ID[remains.speciesId].name}.`, at);
+  return state;
+}
+
+function processingCycleDuration(pet) {
+  const aptitude = petAptitude(SPECIES_BY_ID[pet.speciesId], "processing");
+  return Math.max(30000, Math.round(30000 * Math.pow(10 / aptitude, 1.1)));
+}
+
+export function startProcessingShift(rawState, { petId, durationHours = 2 }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  const pet = requireHealthyIdlePet(state, petId);
+  requireActiveSpace(state);
+  const id = randomId("processing-shift");
+  const durationMs = processingCycleDuration(pet);
+  const plannedEndAt = at + idleDurationMs(durationHours);
+  state.activities.push({ id, kind: "processing-shift", taskId: "queue", petId, startedAt: at, lastAt: at, plannedEndAt, durationMs, completedActions: 0, status: "running" });
+  pet.status = `processing-shift:${id}`;
+  addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started a Processing shift.`, at);
   return state;
 }
 
@@ -380,8 +425,7 @@ function completeRepeatedActivity(state, assignment, pet, task, actions, random,
   const structureBonus = task.skill === "mischief" && state.buildings.watchtower ? 0.08 : 0;
   for (let index = 0; index < actions; index += 1) {
     const burst = aptitudeYield(aptitude, random);
-    const mealBonus = Number(ITEMS[assignment.mealId]?.workBonus || 0);
-    const extraRoll = random() < mealBonus + structureBonus ? 1 : 0;
+    const extraRoll = random() < structureBonus ? 1 : 0;
     for (const [itemId, baseAmount] of Object.entries(task.rewards || {})) {
       const quantity = Number(baseAmount) * (burst + extraRoll);
       if (!addItem(state, itemId, quantity)) {
@@ -408,22 +452,23 @@ function keeperToolSpeedBonus(state, skillId) {
 
 function requireAvailableKeeper(state) {
   if (state.keeperActivity) throw new GameError("Your Keeper is already completing an action.");
+  if (state.combatPatrol?.includeKeeper) throw new GameError("Your Keeper is already away on a combat patrol.");
   if (Number(state.profile.currentHp || 0) <= 0) throw new GameError("Your Keeper is downed. Use food or a Keeper Tonic before starting an action.");
 }
 
-function keeperOneTimeAssignment(kind, taskId, task, at, durationMs = Number(task.duration || 5) * 1000) {
+function keeperOneTimeAssignment(kind, taskId, task, at, durationMs = Number(task.duration || 5) * 1000 * ACTION_TIME_SCALE) {
   return { id: randomId(`keeper-${kind}`), kind: `keeper-${kind}`, taskId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" };
 }
 
-export function startKeeperActivity(rawState, { activityId }, at = nowMs()) {
+export function startKeeperActivity(rawState, { activityId, durationHours = 2 }, at = nowMs()) {
   const state = normalizeState(rawState);
   requireAvailableKeeper(state);
   const task = ACTIVITY_BY_ID[activityId];
   if (!task) throw new GameError("Unknown activity.", "not-found");
   if (skillLevel(state, task.skill) < Number(task.level || 1)) throw new GameError(`${task.name} requires ${task.skill} level ${task.level}.`);
   const toolBonus = keeperToolSpeedBonus(state, task.skill);
-  const durationMs = Math.max(1800, Math.round(Number(task.duration || 5) * 1000 * (1 - toolBonus)));
-  state.keeperActivity = { id: randomId("keeper-work"), kind: "keeper", taskId: task.id, startedAt: at, lastAt: at, durationMs, completedActions: 0, status: "running" };
+  const durationMs = Math.max(5000, Math.round(Number(task.duration || 5) * 1000 * ACTION_TIME_SCALE * (1 - toolBonus)));
+  state.keeperActivity = { id: randomId("keeper-work"), kind: "keeper", taskId: task.id, startedAt: at, lastAt: at, plannedEndAt: at + idleDurationMs(durationHours), durationMs, completedActions: 0, status: "running" };
   addJournal(state, `You started ${task.name}.`, at);
   return state;
 }
@@ -481,9 +526,10 @@ function settleKeeperActivity(state, at, random, events) {
   if (assignment.kind === "keeper") {
     const task = ACTIVITY_BY_ID[assignment.taskId];
     if (!task) { state.keeperActivity = null; return; }
-    const lowerBound = at - OFFLINE_CAP_MS;
-    assignment.lastAt = Math.max(Number(assignment.lastAt || lowerBound), lowerBound);
-    const due = Math.max(0, Math.floor((at - assignment.lastAt) / Math.max(1, assignment.durationMs)));
+    const plannedEndAt = Number(assignment.plannedEndAt || assignment.startedAt + OFFLINE_CAP_MS);
+    const effectiveAt = Math.min(at, plannedEndAt);
+    assignment.lastAt = Math.max(Number(assignment.lastAt || assignment.startedAt), Number(assignment.startedAt || 0));
+    const due = Math.max(0, Math.floor((effectiveAt - assignment.lastAt) / Math.max(1, assignment.durationMs)));
     for (let index = 0; index < due; index += 1) {
       let full = false;
       for (const [itemId, amount] of Object.entries(task.rewards || {})) {
@@ -502,6 +548,10 @@ function settleKeeperActivity(state, at, random, events) {
       state.stats.keeperActions += 1;
     }
     if (due) events.push({ type: "keeper", text: `You completed ${due} ${task.name} action${due === 1 ? "" : "s"}.` });
+    if (at >= plannedEndAt) {
+      events.push({ type: "complete", text: `Your ${task.name} work session finished after ${assignment.completedActions || 0} actions.` });
+      state.keeperActivity = null;
+    }
     return;
   }
 
@@ -568,19 +618,13 @@ function finishAssignment(state, assignment, pet, random, events) {
   } else if (assignment.kind === "processing") {
     const target = SPECIES_BY_ID[assignment.taskId];
     const processor = SPECIES_BY_ID[pet.speciesId];
-    const aptitude = Number(processor.aptitudes.processing || 1);
-    const burst = aptitudeYield(aptitude, random);
-    const facilityScale = state.buildings.smokehouse ? 1.1 : 1;
-    for (const [itemId, amount] of Object.entries(target.materials || {})) addItem(state, itemId, Math.max(1, Math.floor(Number(amount) * burst * facilityScale)));
-    const coins = processingCoinReward(target, 1 + Math.max(0, burst - 1) * 0.3);
-    state.profile.coins += coins;
-    state.stats.processingCoins = Number(state.stats.processingCoins || 0) + coins;
-    const xp = 22 + (REGIONS_INDEX[target.region] || 0) * 28;
-    grantSkillXp(state, "processing", xp);
-    grantSkillXp(state, "petMastery", Math.floor(xp * 0.2));
-    grantPetXp(state, pet, Math.floor(xp * 0.72));
-    state.stats.processed += 1;
-    events.push({ type: "complete", text: `${processor.name} finished Processing ${target.name} and recovered ${coins} coins.` });
+    const result = completePetProcessing(state, pet, target, random);
+    if (result.completed) {
+      events.push({ type: "complete", text: `${processor.name} finished Processing ${target.name} and recovered ${result.coins} coins.` });
+    } else {
+      addRemains(state, target.id, "processing-returned");
+      events.push({ type: "stopped", text: `${processor.name} could not store the recovered materials, so the remains returned to the queue.` });
+    }
   }
   pet.status = "idle";
 }
@@ -598,49 +642,314 @@ export function processingCoinReward(speciesOrId, yieldMultiplier = 1) {
   return Math.max(1, Math.round(base * Math.max(1, Number(yieldMultiplier || 1))));
 }
 
+function processingBatch(state, target, aptitude, random) {
+  const burst = aptitudeYield(aptitude, random);
+  const facilityScale = state.buildings.smokehouse ? 1.1 : 1;
+  const materials = Object.fromEntries(Object.entries(target.materials || {}).map(([itemId, amount]) => [itemId, Math.max(1, Math.floor(Number(amount) * burst * facilityScale))]));
+  const coins = processingCoinReward(target, 1 + Math.max(0, burst - 1) * 0.3);
+  return { materials, coins };
+}
+
+function canStoreBatch(state, materials) {
+  const newStacks = Object.entries(materials).filter(([itemId, amount]) => Number(amount) > 0 && Number(state.inventory[itemId] || 0) <= 0).length;
+  return nonzeroInventoryKeys(state) + newStacks <= storageCapacity(state);
+}
+
+function completePetProcessing(state, pet, target, random) {
+  if (!target) return { completed: false, coins: 0 };
+  const aptitude = petAptitude(SPECIES_BY_ID[pet.speciesId], "processing");
+  const batch = processingBatch(state, target, aptitude, random);
+  if (!canStoreBatch(state, batch.materials)) return { completed: false, coins: 0 };
+  for (const [itemId, amount] of Object.entries(batch.materials)) addItem(state, itemId, amount);
+  state.profile.coins += batch.coins;
+  state.stats.processingCoins = Number(state.stats.processingCoins || 0) + batch.coins;
+  const xp = 22 + (REGIONS_INDEX[target.region] || 0) * 28;
+  grantSkillXp(state, "processing", xp);
+  grantSkillXp(state, "petMastery", Math.floor(xp * 0.2));
+  grantPetXp(state, pet, Math.floor(xp * 0.72));
+  state.stats.processed += 1;
+  state.stats.actions += 1;
+  return { completed: true, coins: batch.coins };
+}
+
+function settleProcessingShift(state, assignment, pet, at, random, events) {
+  const plannedEndAt = Number(assignment.plannedEndAt || assignment.startedAt + OFFLINE_CAP_MS);
+  const effectiveAt = Math.min(at, plannedEndAt);
+  assignment.lastAt = Math.max(Number(assignment.lastAt || assignment.startedAt), Number(assignment.startedAt || 0));
+  const due = Math.max(0, Math.floor((effectiveAt - assignment.lastAt) / Math.max(1, assignment.durationMs)));
+  let completed = 0;
+  let recoveredCoins = 0;
+  let storageFull = false;
+  for (let index = 0; index < due; index += 1) {
+    assignment.lastAt += assignment.durationMs;
+    const remains = state.remains[0];
+    if (!remains) continue;
+    const target = SPECIES_BY_ID[remains.speciesId];
+    if (!target) {
+      state.remains.shift();
+      continue;
+    }
+    const result = completePetProcessing(state, pet, target, random);
+    if (!result.completed) {
+      storageFull = true;
+      assignment.status = "storage-full";
+      break;
+    }
+    state.remains.shift();
+    assignment.completedActions = Number(assignment.completedActions || 0) + 1;
+    completed += 1;
+    recoveredCoins += result.coins;
+  }
+  if (completed) events.push({ type: "processing", text: `${SPECIES_BY_ID[pet.speciesId].name} processed ${completed} queued pet${completed === 1 ? "" : "s"} and recovered ${recoveredCoins} coins.` });
+  if (storageFull || at >= plannedEndAt) {
+    pet.status = "idle";
+    events.push({ type: storageFull ? "stopped" : "complete", text: storageFull
+      ? `${SPECIES_BY_ID[pet.speciesId].name}'s Processing shift stopped because storage is full.`
+      : `${SPECIES_BY_ID[pet.speciesId].name} finished its Processing shift after ${assignment.completedActions || 0} remains.` });
+    return false;
+  }
+  return true;
+}
+
 export function combatRequirement(speciesOrId) {
   const species = typeof speciesOrId === "string" ? SPECIES_BY_ID[speciesOrId] : speciesOrId;
   if (!species || species.acquisition === "Dungeon") return Infinity;
   return Math.min(100, 1 + (REGIONS_INDEX[species.region] || 0) * 20 + Number(HUNT_TIER_OFFSET[species.acquisition] || 0));
 }
 
-export function settleState(rawState, at = nowMs(), random = Math.random) {
+const HOUR_MS = 60 * 60 * 1000;
+const PATROL_INTERVAL_MINUTES = [6, 8, 10, 12, 15];
+
+function combatPatrolInterval(state, regionId, petIds, includeKeeper) {
+  const regionIndex = REGIONS_INDEX[regionId] || 0;
+  const partySize = Math.max(1, petIds.length + (includeKeeper ? 1 : 0));
+  const partySpeed = petIds.reduce((sum, petId) => {
+    const pet = state.pets.find((entry) => entry.id === petId);
+    return sum + (pet ? scaledPetStats(pet).speed : 0);
+  }, includeKeeper ? keeperStats(state).speed : 0);
+  const speedScale = clamp(1.08 - partySpeed / Math.max(1, partySize) / 420, 0.82, 1.05);
+  const partyScale = 1 - Math.min(0.16, Math.max(0, partySize - 1) * 0.06);
+  return Math.round(PATROL_INTERVAL_MINUTES[regionIndex] * 60 * 1000 * speedScale * partyScale);
+}
+
+export function startCombatPatrol(rawState, {
+  petIds = [],
+  regionId = "greenhollow",
+  durationHours = 2,
+  mealId = "",
+  includeKeeper = false,
+  combatStyle = "melee",
+  autoEat = true,
+}, at = nowMs()) {
   const state = normalizeState(rawState);
+  if (state.combatPatrol) throw new GameError("A combat patrol is already underway.");
+  if (state.pendingEncounter) throw new GameError("Resolve the current capture opportunity before starting a patrol.");
+  const ids = [...new Set(Array.isArray(petIds) ? petIds : [])];
+  if (!ids.length && !includeKeeper) throw new GameError("Choose at least one pet or send the Keeper.");
+  if (ids.length > MAX_COMBAT_PETS) throw new GameError(`Combat patrols can contain at most ${MAX_COMBAT_PETS} pets.`);
+  requireActiveSpace(state, ids.length);
+  const pets = ids.map((petId) => requireHealthyIdlePet(state, petId));
+  if (includeKeeper) {
+    requireAvailableKeeper(state);
+    combatantFromKeeper(state, combatStyle);
+  }
+  const pool = listAreaOpponents(state, regionId);
+  if (!pool.length) throw new GameError("No enemies in that area are available at your current Combat level.");
+  if (autoEat && (!ITEMS[mealId] || ITEMS[mealId].category !== "meal")) throw new GameError("Choose a battle meal for Auto-eat, or turn Auto-eat off.");
+  const durationMs = idleDurationMs(durationHours);
+  const intervalMs = combatPatrolInterval(state, regionId, ids, includeKeeper);
+  const id = randomId("patrol");
+  state.combatPatrol = {
+    id,
+    regionId,
+    petIds: ids,
+    includeKeeper: Boolean(includeKeeper),
+    combatStyle,
+    mealId,
+    autoEat: Boolean(autoEat),
+    startedAt: at,
+    endAt: at + durationMs,
+    nextEncounterAt: at + intervalMs,
+    intervalMs,
+    completedBattles: 0,
+    victories: 0,
+    defeats: 0,
+    harvested: 0,
+    mealsUsed: 0,
+    encounters: {},
+    status: "running",
+  };
+  for (const pet of pets) pet.status = `combat:${id}`;
+  state.combatPreferences = { ...state.combatPreferences, regionId, mealId, includeKeeper: Boolean(includeKeeper), autoEat: Boolean(autoEat), autoHunt: true, autoHarvest: true };
+  addJournal(state, `A ${Math.round(durationMs / HOUR_MS)}-hour combat patrol departed for ${REGIONS.find((region) => region.id === regionId)?.name || regionId}.`, at);
+  return state;
+}
+
+function settlePassiveRegen(state, at) {
+  const previous = Number(state.profile.lastRegenAt || state.profile.lastSeenAt || at);
+  const rawElapsed = Math.max(0, at - previous);
+  const ordinaryHours = Math.floor(Math.min(OFFLINE_CAP_MS, rawElapsed) / HOUR_MS);
+  if (!ordinaryHours) return;
+  const boost = state.buildings?.["mess-hall"] ? 1.25 : 1;
+  const patrolPetIds = new Set(state.combatPatrol?.petIds || []);
+  const patrolReturnAt = state.combatPatrol ? Math.min(at, Number(state.combatPatrol.endAt || at)) : previous;
+  const returningHours = Math.floor(Math.min(OFFLINE_CAP_MS, Math.max(0, at - Math.max(previous, patrolReturnAt))) / HOUR_MS);
+  const keeperHours = state.combatPatrol?.includeKeeper ? returningHours : ordinaryHours;
+  if (keeperHours) {
+    const maxHp = keeperStats(state).maxHp;
+    const heal = Math.max(1, Math.floor(maxHp * 0.01 * keeperHours * boost));
+    state.profile.currentHp = Math.min(maxHp, Number(state.profile.currentHp || 0) + heal);
+  }
+  for (const pet of state.pets) {
+    const hours = patrolPetIds.has(pet.id) ? returningHours : ordinaryHours;
+    if (!hours) continue;
+    const maxHp = scaledPetStats(pet).hp;
+    const heal = Math.max(1, Math.floor(maxHp * 0.01 * hours * boost));
+    pet.currentHp = Math.min(maxHp, Number(pet.currentHp || 0) + heal);
+  }
+  state.profile.lastRegenAt = rawElapsed > OFFLINE_CAP_MS ? at : previous + ordinaryHours * HOUR_MS;
+}
+
+function completeCombatPatrol(state, run, at, events, reason = "time") {
+  for (const petId of run.petIds || []) {
+    const pet = state.pets.find((entry) => entry.id === petId);
+    if (pet && String(pet.status || "").startsWith(`combat:${run.id}`)) pet.status = "idle";
+  }
+  state.lastCombatReport = {
+    id: run.id,
+    regionId: run.regionId,
+    startedAt: run.startedAt,
+    endedAt: Math.min(at, Number(run.endAt || at)),
+    plannedEndAt: run.endAt,
+    completedBattles: Number(run.completedBattles || 0),
+    victories: Number(run.victories || 0),
+    defeats: Number(run.defeats || 0),
+    harvested: Number(run.harvested || 0),
+    mealsUsed: Number(run.mealsUsed || 0),
+    encounters: { ...(run.encounters || {}) },
+    reason,
+  };
+  state.stats.patrols = Number(state.stats.patrols || 0) + 1;
+  state.stats.patrolBattles = Number(state.stats.patrolBattles || 0) + Number(run.completedBattles || 0);
+  state.combatPatrol = null;
+  const summary = reason === "downed" ? "ended because every fighter was downed" : reason === "stopped" ? "returned early" : "returned on schedule";
+  events.push({ type: "patrol", text: `The combat patrol ${summary}: ${run.victories || 0} victories from ${run.completedBattles || 0} encounters.` });
+  return state;
+}
+
+function settleCombatPatrol(inputState, at, random, events) {
+  let state = inputState;
+  let run = state.combatPatrol;
+  if (!run) return state;
+  const effectiveAt = Math.min(at, Number(run.endAt || at));
+  let due = effectiveAt >= Number(run.nextEncounterAt || Infinity)
+    ? Math.floor((effectiveAt - Number(run.nextEncounterAt)) / Math.max(1, Number(run.intervalMs || 1))) + 1
+    : 0;
+  due = Math.min(320, Math.max(0, due));
+  for (let index = 0; index < due; index += 1) {
+    const availablePetIds = (run.petIds || []).filter((petId) => Number(state.pets.find((entry) => entry.id === petId)?.currentHp || 0) > 0);
+    const keeperAvailable = Boolean(run.includeKeeper && Number(state.profile.currentHp || 0) > 0);
+    if (!availablePetIds.length && !keeperAvailable) return completeCombatPatrol(state, run, at, events, "downed");
+    const battleAt = Number(run.nextEncounterAt);
+    const savedRun = { ...run, encounters: { ...(run.encounters || {}) } };
+    for (const petId of run.petIds || []) {
+      const pet = state.pets.find((entry) => entry.id === petId);
+      if (pet) pet.status = "idle";
+    }
+    state.combatPatrol = null;
+    const beforeMeals = Number(state.inventory[run.mealId] || 0);
+    const canAutoEat = Boolean(run.autoEat && beforeMeals > 0 && ITEMS[run.mealId]?.category === "meal");
+    let result;
+    try {
+      result = resolveAreaCombat(state, {
+        petIds: availablePetIds,
+        regionId: run.regionId,
+        mealId: run.mealId,
+        includeKeeper: keeperAvailable,
+        combatStyle: run.combatStyle,
+        autoHunt: true,
+        autoEat: canAutoEat,
+        autoHarvest: true,
+        silent: true,
+      }, random, battleAt);
+    } catch (error) {
+      state.combatPatrol = savedRun;
+      for (const petId of savedRun.petIds || []) {
+        const pet = state.pets.find((entry) => entry.id === petId);
+        if (pet) pet.status = `combat:${savedRun.id}`;
+      }
+      events.push({ type: "patrol", text: `The combat patrol stopped safely: ${error.message}` });
+      return completeCombatPatrol(state, savedRun, at, events, "stopped");
+    }
+    state = result.state;
+    run = savedRun;
+    run.completedBattles = Number(run.completedBattles || 0) + 1;
+    if (result.battle.victory) {
+      run.victories = Number(run.victories || 0) + 1;
+      run.harvested = Number(run.harvested || 0) + 1;
+    } else {
+      run.defeats = Number(run.defeats || 0) + 1;
+    }
+    run.mealsUsed = Number(run.mealsUsed || 0) + Math.max(0, beforeMeals - Number(state.inventory[run.mealId] || 0));
+    run.encounters[result.battle.enemy.speciesId] = Number(run.encounters[result.battle.enemy.speciesId] || 0) + 1;
+    run.nextEncounterAt = Number(run.nextEncounterAt) + Number(run.intervalMs);
+    state.combatPatrol = run;
+    for (const petId of run.petIds || []) {
+      const pet = state.pets.find((entry) => entry.id === petId);
+      if (pet) pet.status = `combat:${run.id}`;
+    }
+  }
+  if (at >= Number(run.endAt || Infinity)) return completeCombatPatrol(state, run, at, events, "time");
+  state.combatPatrol = run;
+  return state;
+}
+
+export function stopCombatPatrol(rawState, at = nowMs()) {
+  const settled = settleState(rawState, at);
+  const state = settled.state;
+  if (!state.combatPatrol) return state;
   const events = [];
+  const next = completeCombatPatrol(state, state.combatPatrol, at, events, "stopped");
+  for (const event of events) addJournal(next, event.text, at);
+  return next;
+}
+
+export function settleState(rawState, at = nowMs(), random = Math.random) {
+  let state = normalizeState(rawState);
+  const events = [];
+  settlePassiveRegen(state, at);
+  state = settleCombatPatrol(state, at, random, events);
   settleKeeperActivity(state, at, random, events);
   const retained = [];
-  const lowerBound = at - OFFLINE_CAP_MS;
   for (const assignment of state.activities) {
     const pet = state.pets.find((entry) => entry.id === assignment.petId);
     if (!pet) continue;
     if (assignment.kind === "activity") {
       const task = ACTIVITY_BY_ID[assignment.taskId];
       if (!task) { pet.status = "idle"; continue; }
-      assignment.lastAt = Math.max(Number(assignment.lastAt || lowerBound), lowerBound);
-      const due = Math.max(0, Math.floor((at - assignment.lastAt) / assignment.durationMs));
+      const plannedEndAt = Number(assignment.plannedEndAt || assignment.startedAt + OFFLINE_CAP_MS);
+      const effectiveAt = Math.min(at, plannedEndAt);
+      assignment.lastAt = Math.max(Number(assignment.lastAt || assignment.startedAt), Number(assignment.startedAt || 0));
+      const due = Math.max(0, Math.floor((effectiveAt - assignment.lastAt) / assignment.durationMs));
       let completed = 0;
       let shouldStop = false;
       for (let index = 0; index < due; index += 1) {
-        if (assignment.nutrition <= 0) {
-          if (Number(state.inventory[assignment.mealId] || 0) <= 0) {
-            shouldStop = true;
-            events.push({ type: "stopped", text: `${SPECIES_BY_ID[pet.speciesId].name} stopped ${task.name}: no ${ITEMS[assignment.mealId]?.name || "meal"} remains.` });
-            break;
-          }
-          assignment.nutrition = consumeWorkingMeal(state, assignment.mealId);
-        }
         const done = completeRepeatedActivity(state, assignment, pet, task, 1, random, events);
         if (!done) { shouldStop = true; break; }
-        assignment.nutrition -= 1;
         assignment.lastAt += assignment.durationMs;
         completed += 1;
       }
-      if (shouldStop || assignment.status === "storage-full") {
+      if (shouldStop || assignment.status === "storage-full" || at >= plannedEndAt) {
         pet.status = "idle";
+        if (at >= plannedEndAt && !shouldStop && assignment.status !== "storage-full") {
+          events.push({ type: "complete", text: `${SPECIES_BY_ID[pet.speciesId].name} finished ${task.name} after ${assignment.completedActions || 0} actions.` });
+        }
       } else {
         retained.push(assignment);
       }
       if (completed > 1) events.push({ type: "summary", text: `${completed} total actions settled while you were away.` });
+    } else if (assignment.kind === "processing-shift") {
+      if (settleProcessingShift(state, assignment, pet, at, random, events)) retained.push(assignment);
     } else if (Number(assignment.endAt || 0) <= at) {
       finishAssignment(state, assignment, pet, random, events);
     } else {
@@ -688,7 +997,7 @@ function enemyCombatant(speciesId) {
   const species = SPECIES_BY_ID[speciesId];
   if (!species) throw new GameError("Unknown opponent.", "not-found");
   const band = REGIONS_INDEX[species.region] || 0;
-  const level = 6 + band * 20;
+  const level = 2 + band * 20;
   const stats = scaledPetStats({ speciesId, level, stars: Math.min(5, band + 1) });
   const bossScale = species.acquisition === "Area Boss" ? 1.35 : species.acquisition === "Dungeon" ? 1.65 : 1;
   const maxHp = Math.round(stats.hp * bossScale);
@@ -707,8 +1016,23 @@ function damageRoll(attacker, defender, abilityPower, random) {
   return { amount: Math.max(1, Math.round(raw - defender.defense * 0.42)), critical, affinity };
 }
 
-export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeeper = true, combatStyle = "melee", autoEat = true }, random = Math.random, at = nowMs()) {
+function abilityHeal(attacker, allies) {
+  const kind = attacker.ability?.kind || "damage";
+  if (!kind.startsWith("heal")) return null;
+  const candidates = kind === "heal-self" ? [attacker] : allies.filter((entry) => entry.alive);
+  const target = candidates
+    .filter((entry) => entry.hp < entry.maxHp)
+    .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+  if (!target) return null;
+  const amount = Math.min(target.maxHp - target.hp, Math.max(1, Math.round(attacker.attack * Number(attacker.ability.power || 0.35) + target.maxHp * 0.04)));
+  target.hp += amount;
+  target.alive = target.hp > 0;
+  return { target, amount, kind };
+}
+
+export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeeper = true, combatStyle = "melee", autoEat = true, silent = false }, random = Math.random, at = nowMs()) {
   const state = normalizeState(rawState);
+  if (state.combatPatrol) throw new GameError("Your combat patrol must return before starting a live battle.");
   if (state.pendingEncounter) throw new GameError("Resolve the current capture opportunity first.");
   const ids = [...new Set(Array.isArray(petIds) ? petIds : [])];
   if (!ids.length && !includeKeeper) throw new GameError("Choose the Keeper, at least one combat pet, or both.");
@@ -746,10 +1070,16 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeep
       attacker.charge -= attackInterval(attacker.speed);
       attacker.attacks += 1;
       const usesAbility = attacker.attacks % Number(attacker.ability.cooldown || 4) === 0;
-      const hit = damageRoll(attacker, enemy, usesAbility ? attacker.ability.power : 1, random);
+      const healing = usesAbility ? abilityHeal(attacker, aliveTeam) : null;
+      if (healing) {
+        events.push({ time, type: "heal", sourceId: attacker.id, targetId: healing.target.id, amount: healing.amount, targetHp: healing.target.hp, targetMaxHp: healing.target.maxHp, ability: attacker.ability.name, healKind: healing.kind });
+        continue;
+      }
+      const damagingAbility = usesAbility && (attacker.ability?.kind || "damage") === "damage";
+      const hit = damageRoll(attacker, enemy, damagingAbility ? attacker.ability.power : 1, random);
       enemy.hp = Math.max(0, enemy.hp - hit.amount);
       enemy.alive = enemy.hp > 0;
-      events.push({ time, type: "hit", sourceId: attacker.id, targetId: enemy.id, amount: hit.amount, critical: hit.critical, strong: hit.affinity > 1, ability: usesAbility ? attacker.ability.name : null, targetHp: enemy.hp, targetMaxHp: enemy.maxHp });
+      events.push({ time, type: "hit", sourceId: attacker.id, targetId: enemy.id, amount: hit.amount, critical: hit.critical, strong: hit.affinity > 1, ability: damagingAbility ? attacker.ability.name : null, targetHp: enemy.hp, targetMaxHp: enemy.maxHp });
     }
     if (!enemy.alive) break;
 
@@ -759,16 +1089,22 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeep
       const candidates = team.filter((entry) => entry.alive);
       const target = candidates[Math.floor(random() * candidates.length)];
       const usesAbility = enemy.attacks % Number(enemy.ability.cooldown || 4) === 0;
-      const hit = damageRoll(enemy, target, usesAbility ? enemy.ability.power : 1, random);
+      const healing = usesAbility ? abilityHeal(enemy, [enemy]) : null;
+      if (healing) {
+        events.push({ time, type: "heal", sourceId: enemy.id, targetId: enemy.id, amount: healing.amount, targetHp: enemy.hp, targetMaxHp: enemy.maxHp, ability: enemy.ability.name, healKind: healing.kind });
+        continue;
+      }
+      const damagingAbility = usesAbility && (enemy.ability?.kind || "damage") === "damage";
+      const hit = damageRoll(enemy, target, damagingAbility ? enemy.ability.power : 1, random);
       target.hp = Math.max(0, target.hp - hit.amount);
       target.alive = target.hp > 0;
-      events.push({ time, type: "hit", sourceId: enemy.id, targetId: target.id, amount: hit.amount, critical: hit.critical, strong: hit.affinity > 1, ability: usesAbility ? enemy.ability.name : null, targetHp: target.hp, targetMaxHp: target.maxHp });
+      events.push({ time, type: "hit", sourceId: enemy.id, targetId: target.id, amount: hit.amount, critical: hit.critical, strong: hit.affinity > 1, ability: damagingAbility ? enemy.ability.name : null, targetHp: target.hp, targetMaxHp: target.maxHp });
 
       if (autoEat && target.alive && target.hp / target.maxHp < 0.38 && Number(state.inventory[mealId] || 0) > 0) {
         removeItems(state, { [mealId]: 1 });
         const healed = Math.min(target.maxHp - target.hp, Number(ITEMS[mealId].heal || 10));
         target.hp += healed;
-        events.push({ time: time + 40, type: "heal", targetId: target.id, amount: healed, targetHp: target.hp, targetMaxHp: target.maxHp, mealId });
+        events.push({ time: time + 40, type: "heal", sourceId: target.id, targetId: target.id, amount: healed, targetHp: target.hp, targetMaxHp: target.maxHp, mealId, healKind: "meal" });
       }
     }
   }
@@ -791,9 +1127,9 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeep
     state.pendingEncounter = { speciesId, createdAt: at, source: "combat" };
     state.stats.victories += 1;
     if (!state.discoveries.includes(speciesId)) state.discoveries.push(speciesId);
-    addJournal(state, `${enemySpecies.name} was defeated. Choose whether to capture or Process it.`, at);
+    if (!silent) addJournal(state, `${enemySpecies.name} was defeated. Choose whether to capture or Process it.`, at);
   } else {
-    addJournal(state, `The party withdrew from ${enemySpecies.name}. Downed combatants need food or tonics before returning.`, at);
+    if (!silent) addJournal(state, `The party withdrew from ${enemySpecies.name}. Downed combatants need food or tonics before returning.`, at);
   }
   events.push({ time: time + 80, type: "end", victory, enemyHp: enemy.hp, team: team.map((entry) => ({ id: entry.id, hp: entry.hp, maxHp: entry.maxHp })) });
   return { state, battle: { victory, duration: time, events, enemy: { id: enemy.id, speciesId, name: enemy.name, affinity: enemy.affinity, level: enemy.level, ability: enemy.ability.name, maxHp: enemy.maxHp, startingHp: enemy.initialHp, attackInterval: attackInterval(enemy.speed), kind: "enemy" }, team: team.map((entry) => ({ id: entry.id, name: entry.name, speciesId: entry.speciesId, level: entry.level, ability: entry.ability.name, maxHp: entry.maxHp, startingHp: entry.initialHp, attackInterval: attackInterval(entry.speed), kind: entry.kind, combatStyle: entry.combatStyle })) } };
@@ -823,18 +1159,24 @@ export function resolveAreaCombat(rawState, {
   autoHunt = true,
   autoEat = true,
   autoHarvest = true,
+  silent = false,
 }, random = Math.random, at = nowMs()) {
   const state = normalizeState(rawState);
   const pool = listAreaOpponents(state, regionId);
   if (!pool.length) throw new GameError("No enemies in that area are available at your current Combat level.");
   const opponent = chooseAreaOpponent(pool, random);
   state.combatPreferences = { regionId, autoHunt: Boolean(autoHunt), autoEat: Boolean(autoEat), autoHarvest: Boolean(autoHarvest), mealId, includeKeeper: Boolean(includeKeeper) };
-  const result = resolveCombat(state, { petIds, speciesId: opponent.id, mealId, includeKeeper, combatStyle, autoEat }, random, at);
+  const result = resolveCombat(state, { petIds, speciesId: opponent.id, mealId, includeKeeper, combatStyle, autoEat, silent }, random, at);
   result.battle.regionId = regionId;
   result.battle.encounterPoolSize = pool.length;
   result.battle.autoHarvested = false;
   if (result.battle.victory && autoHarvest) {
-    result.state = declineCapture(result.state, at + 1);
+    if (silent) {
+      addRemains(result.state, opponent.id, "combat-patrol");
+      result.state.pendingEncounter = null;
+    } else {
+      result.state = declineCapture(result.state, at + 1);
+    }
     result.battle.autoHarvested = true;
   }
   return result;

@@ -19,6 +19,7 @@ import {
   sacrificePet,
   settleState,
   startActivity,
+  startCombatPatrol,
   startKeeperActivity,
   startKeeperConstruction,
   startKeeperProcessing,
@@ -26,8 +27,10 @@ import {
   startConstruction,
   startDungeon,
   startProcessing,
+  startProcessingShift,
   startRecipe,
   stopActivity,
+  stopCombatPatrol,
   stopKeeperActivity,
   useHealingItem,
 } from "./game-engine.js";
@@ -54,7 +57,10 @@ function actionResult(action, state, payload, at) {
   if (action === "startRecipe") return { state: startRecipe(state, payload, at) };
   if (action === "startConstruction") return { state: startConstruction(state, payload, at) };
   if (action === "startProcessing") return { state: startProcessing(state, payload, at) };
+  if (action === "startProcessingShift") return { state: startProcessingShift(state, payload, at) };
+  if (action === "startCombatPatrol") return { state: startCombatPatrol(state, payload, at) };
   if (action === "stopActivity") return { state: stopActivity(state, payload.activityId, at) };
+  if (action === "stopCombatPatrol") return { state: stopCombatPatrol(state, at) };
   if (action === "stopKeeperActivity") return { state: stopKeeperActivity(state, at) };
   if (action === "equipItem") return { state: equipItem(state, payload.itemId, at) };
   if (action === "buyStoreItem") return { state: buyStoreItem(state, payload, at) };

@@ -20,6 +20,7 @@ import {
   resolveCombat,
   settleState,
   startActivity,
+  startCombatPatrol,
   startConstruction,
   startDungeon,
   startKeeperActivity,
@@ -27,10 +28,12 @@ import {
   startKeeperProcessing,
   startKeeperRecipe,
   startProcessing,
+  startProcessingShift,
   startRecipe,
+  stopCombatPatrol,
   useHealingItem,
 } from "./game-engine.js";
-import { ACTIVITIES, BUILDINGS, DUNGEONS, ITEMS, PET_SPECIES, RECIPES, SKILLS, petActionDuration, scaledPetStats } from "./game-data.js";
+import { ACTION_TIME_SCALE, ACTIVITIES, BUILDINGS, DUNGEONS, ITEMS, PET_SPECIES, RECIPES, SKILLS, petActionDuration, scaledPetStats } from "./game-data.js";
 import { friendlyAuthError } from "./auth-errors.js";
 
 test("all 50 species have unique production art files", async () => {
@@ -45,21 +48,23 @@ test("initial save has the locked capacities and starter", () => {
   assert.equal(state.profile.denCapacity, 12);
   assert.equal(state.pets.length, 1);
   assert.equal(state.pets[0].speciesId, "ash-raccoon");
+  assert.equal(PET_SPECIES.find((species) => species.id === "ash-raccoon").aptitudes.mischief, 4);
   assert.equal(SKILLS.length, 14);
   assert.equal(state.equipment.weapon, "wooden-sword");
   assert.equal(state.profile.currentHp, keeperStats(state).maxHp);
 });
 
-test("aptitude activity consumes food and settles rewards", () => {
+test("scheduled pet work consumes no food and settles rewards", () => {
   const at = 1_000_000;
   const original = createInitialState("Worker");
   original.profile.lastSeenAt = at;
   const started = startActivity(original, {
     petId: original.pets[0].id,
     activityId: "hedgerow",
-    mealId: "camp-skewer",
+    durationHours: 2,
   }, at);
-  assert.equal(started.inventory["camp-skewer"], 17);
+  assert.equal(started.inventory["camp-skewer"], 18);
+  assert.equal(started.activities[0].plannedEndAt, at + 2 * 60 * 60 * 1000);
   const finishAt = at + started.activities[0].durationMs + 100;
   const { state } = settleState(started, finishAt, () => 0.9);
   assert.equal(state.inventory["wild-berries"], 9);
@@ -67,6 +72,7 @@ test("aptitude activity consumes food and settles rewards", () => {
   assert.equal(state.stats.actions, 1);
   assert.equal(state.activities.length, 1);
   assert.equal(state.activities[0].completedActions, 1);
+  assert.equal(state.inventory["camp-skewer"], 18);
 });
 
 test("frequent sync ticks preserve partial idle-action progress", () => {
@@ -81,6 +87,32 @@ test("frequent sync ticks preserve partial idle-action progress", () => {
   assert.equal(state.stats.actions, 1);
   assert.equal(state.inventory["wild-berries"], 9);
   assert.equal(state.activities[0].lastAt, at + duration);
+});
+
+test("work sessions persist for up to 24 hours and release their worker on schedule", () => {
+  const at = 1_075_000;
+  let state = createInitialState("Long Shift");
+  state.profile.lastSeenAt = at;
+  state.profile.lastRegenAt = at;
+  const foodBefore = state.inventory["camp-skewer"];
+  state = startActivity(state, { petId: state.pets[0].id, activityId: "hedgerow", durationHours: 99 }, at);
+  assert.equal(state.activities[0].plannedEndAt, at + 24 * 60 * 60 * 1000);
+  ({ state } = settleState(state, state.activities[0].plannedEndAt + 1, () => 0.9));
+  assert.equal(state.activities.length, 0);
+  assert.equal(state.pets[0].status, "idle");
+  assert.ok(state.stats.actions > 100);
+  assert.equal(state.inventory["camp-skewer"], foodBefore);
+});
+
+test("the Keeper also uses a saved 1-24 hour work-session timer", () => {
+  const at = 1_085_000;
+  let state = createInitialState("Keeper Shift");
+  state.profile.lastSeenAt = at;
+  state = startKeeperActivity(state, { activityId: "fallen-branches", durationHours: 4 }, at);
+  assert.equal(state.keeperActivity.plannedEndAt, at + 4 * 60 * 60 * 1000);
+  ({ state } = settleState(state, state.keeperActivity.plannedEndAt + 1, () => 0.9));
+  assert.equal(state.keeperActivity, null);
+  assert.ok(state.stats.keeperActions > 0);
 });
 
 test("cooking and Processing complete their resource loops", () => {
@@ -99,7 +131,7 @@ test("cooking and Processing complete their resource loops", () => {
   assert.equal(state.stats.processed, 1);
   assert.equal(state.inventory["raw-meat"], 5);
   assert.equal(state.inventory.hide, 1);
-  assert.equal(state.inventory["camp-skewer"], 2);
+  assert.equal(state.inventory["camp-skewer"], 3);
 });
 
 test("six ordinary assignments may run while a seventh is rejected", () => {
@@ -135,7 +167,7 @@ test("aptitude changes pet action time without preventing high-tier work", () =>
   const lowDuration = petActionDuration(task, low);
   const highDuration = petActionDuration(task, high);
   assert.ok(lowDuration > 10 * 60 * 1000);
-  assert.equal(highDuration, task.duration * 1000);
+  assert.equal(highDuration, task.duration * 1000 * ACTION_TIME_SCALE);
   assert.ok(lowDuration > highDuration * 10);
 
   let state = createInitialState("Magic Logger");
@@ -215,6 +247,90 @@ test("downed pets cannot work and healing supplies restore persistent health", (
   assert.equal(healed.state.inventory["pet-tonic"], 1);
 });
 
+test("idle health regeneration restores a modest one percent per hour", () => {
+  const at = 2_325_000;
+  let state = createInitialState("Resting Keeper");
+  state.profile.lastSeenAt = at;
+  state.profile.lastRegenAt = at;
+  state.profile.currentHp = 10;
+  state.pets[0].currentHp = 10;
+  const keeperMax = keeperStats(state).maxHp;
+  const petMax = scaledPetStats(state.pets[0]).hp;
+  ({ state } = settleState(state, at + 5 * 60 * 60 * 1000, () => 0.9));
+  assert.equal(state.profile.currentHp, 10 + Math.max(1, Math.floor(keeperMax * 0.05)));
+  assert.equal(state.pets[0].currentHp, 10 + Math.max(1, Math.floor(petMax * 0.05)));
+});
+
+test("patrol pets regenerate during the hours after their scheduled return", () => {
+  const at = 2_327_000;
+  let state = createInitialState("Returning Patrol");
+  state.profile.lastSeenAt = at;
+  state.profile.lastRegenAt = at;
+  state.pets[0].currentHp = 10;
+  state = startCombatPatrol(state, { petIds: [state.pets[0].id], durationHours: 1, autoEat: false }, at);
+  state.combatPatrol.nextEncounterAt = state.combatPatrol.endAt + 1;
+  const petMax = scaledPetStats(state.pets[0]).hp;
+  ({ state } = settleState(state, at + 5 * 60 * 60 * 1000, () => 0.9));
+  assert.equal(state.combatPatrol, null);
+  assert.equal(state.pets[0].currentHp, 10 + Math.max(1, Math.floor(petMax * 0.04)));
+});
+
+test("a saved Processing shift consumes patrol remains while both run offline", () => {
+  const at = 2_330_000;
+  let state = createInitialState("Patrol Keeper");
+  state.profile.lastSeenAt = at;
+  state.profile.lastRegenAt = at;
+  state.pets[0].level = 20;
+  state.pets[0].currentHp = scaledPetStats(state.pets[0]).hp;
+  const processor = createPetInstance("stoneback-boar", "test");
+  state.pets.push(processor);
+  state.inventory["camp-skewer"] = 100;
+  state = startCombatPatrol(state, { petIds: [state.pets[0].id], regionId: "greenhollow", durationHours: 1, mealId: "camp-skewer", autoEat: true }, at);
+  state = startProcessingShift(state, { petId: processor.id, durationHours: 1 }, at);
+  assert.match(state.pets[0].status, /^combat:/);
+  assert.match(state.pets[1].status, /^processing-shift:/);
+  assert.equal(state.activities[0].plannedEndAt, state.combatPatrol.endAt);
+  const returnAt = state.combatPatrol.endAt + 1;
+  ({ state } = settleState(state, returnAt, () => 0.2));
+  assert.equal(state.combatPatrol, null);
+  assert.ok(state.lastCombatReport.completedBattles > 0);
+  assert.ok(state.lastCombatReport.victories > 0);
+  assert.equal(state.stats.processed, state.lastCombatReport.victories);
+  assert.equal(state.remains.length, 0);
+  assert.equal(state.activities.length, 0);
+  assert.equal(state.pets[0].status, "idle");
+  assert.equal(state.pets[1].status, "idle");
+});
+
+test("combat patrols cap at 24 hours and may be called home early", () => {
+  const at = 2_340_000;
+  let state = createInitialState("Short Patrol");
+  state.pets[0].level = 20;
+  state.pets[0].currentHp = scaledPetStats(state.pets[0]).hp;
+  state = startCombatPatrol(state, { petIds: [state.pets[0].id], durationHours: 200, autoEat: false }, at);
+  assert.equal(state.combatPatrol.endAt, at + 24 * 60 * 60 * 1000);
+  state = stopCombatPatrol(state, at + 1_000);
+  assert.equal(state.combatPatrol, null);
+  assert.equal(state.lastCombatReport.reason, "stopped");
+  assert.equal(state.pets[0].status, "idle");
+});
+
+test("support pets produce visible team-heal events in timed combat", () => {
+  let state = createInitialState("Support Test");
+  const healer = createPetInstance("dawn-koi", "test");
+  const tank = createPetInstance("stoneback-boar", "test");
+  healer.level = 5;
+  tank.level = 5;
+  healer.currentHp = 30;
+  tank.currentHp = 150;
+  state.pets = [healer, tank];
+  const result = resolveCombat(state, { petIds: [healer.id, tank.id], speciesId: "moss-hare", includeKeeper: false, autoEat: false }, () => 0.2, 2_345_000);
+  const heals = result.battle.events.filter((event) => event.type === "heal" && event.ability === "Sunlit Current");
+  assert.ok(heals.length > 0);
+  assert.equal(heals[0].sourceId, healer.id);
+  assert.equal(heals[0].healKind, "heal-team");
+});
+
 test("the General Store and equipment screen enforce ownership and skill levels", () => {
   let state = createInitialState("Shopper");
   const coins = state.profile.coins;
@@ -238,7 +354,7 @@ test("old saves migrate to all Keeper systems without losing progress", () => {
   delete legacy.pets[0].currentHp;
   legacy.profile.coins = 999;
   const migrated = normalizeState(legacy);
-  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.schemaVersion, 4);
   assert.equal(migrated.skills.melee.level, 1);
   assert.equal(migrated.equipment.weapon, "wooden-sword");
   assert.equal(migrated.inventory["wooden-sword"], 1);
@@ -417,13 +533,14 @@ test("the Spark-plan client has no paid Cloud Functions dependency", async () =>
   }
   assert.doesNotMatch(source, /firebase-functions|httpsCallable|getFunctions/);
   assert.match(source, /runTransaction/);
+  assert.match(source, /startProcessingShift/);
   assert.equal(firebaseJson.functions, undefined);
   assert.equal(firebaseJson.storage, undefined);
   assert.equal(deployPackage.dependencies, undefined);
   assert.equal(deployPackage.scripts["deploy:backend"], "firebase deploy --only firestore:rules,firestore:indexes");
 });
 
-test("the UI exposes live work timers, RPG skills, compact inventory, and non-animated combat feedback", async () => {
+test("the UI exposes 24-hour work, persistent patrols, RPG skills, and non-animated combat feedback", async () => {
   const source = await readFile(new URL("./app.js", import.meta.url), "utf8");
   const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
   assert.match(source, /COMBAT_MIN_PLAYBACK_MS = 14000/);
@@ -435,9 +552,27 @@ test("the UI exposes live work timers, RPG skills, compact inventory, and non-an
   assert.doesNotMatch(styles, /@keyframes strike/);
   assert.match(styles, /\.skill-level-medallion/);
   assert.match(styles, /\.compact-storage/);
-  assert.match(source, /combat-auto-hunt/);
+  assert.match(source, /start-combat-patrol/);
+  assert.match(source, /combat-duration/);
+  assert.match(source, /data-patrol-time/);
+  assert.doesNotMatch(source, /combat-auto-hunt/);
   assert.match(source, /combat-auto-eat/);
   assert.match(source, /combat-auto-harvest/);
+  assert.doesNotMatch(source, /Working meal|working nutrition|selected meal runs out/);
+  assert.match(source, /\["processing", "processing-shift", "keeper-processing"\]\.includes/);
+});
+
+test("general branding uses the world roster rather than the starter raccoon", async () => {
+  const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("./app.js", import.meta.url), "utf8");
+  const logo = await readFile(new URL("./logo.svg", import.meta.url), "utf8");
+  assert.doesNotMatch(html, /pets\/ash-raccoon\.png/);
+  assert.match(html, /pets\/moss-hare\.png/);
+  assert.match(html, /pets\/crown-phoenix\.png/);
+  assert.doesNotMatch(source, /SPECIES_BY_ID\["ash-raccoon"\]/);
+  assert.doesNotMatch(html, /Shared world connected/);
+  assert.doesNotMatch(logo, /raccoon|animal tail/i);
+  assert.match(logo, /three-leaf canopy/i);
 });
 
 test("Firestore rules keep saves private while enabling the family market", async () => {

@@ -17,7 +17,12 @@
     <section id="auth-view" class="auth-view" aria-labelledby="auth-title">
       <div class="auth-art" aria-hidden="true">
         <div class="auth-glow"></div>
-        <img src="pets/ash-raccoon.png" alt="" decoding="async" fetchpriority="high" />
+        <div class="auth-creature-showcase">
+          <img src="pets/moss-hare.png" alt="" decoding="async" fetchpriority="high" />
+          <img src="pets/dawn-koi.png" alt="" decoding="async" fetchpriority="high" />
+          <img src="pets/storm-lynx.png" alt="" decoding="async" fetchpriority="high" />
+          <img src="pets/crown-phoenix.png" alt="" decoding="async" fetchpriority="high" />
+        </div>
       </div>
       <div class="auth-panel">
         <div class="auth-panel-inner">
@@ -76,14 +81,6 @@
           </div>
         </div>
         <div class="top-resources" id="top-resources"></div>
-        <div class="account-box">
-          <div>
-            <strong id="keeper-name">Keeper</strong>
-            <span id="connection-state">Shared world connected</span>
-          </div>
-          <button id="sound-toggle" class="button compact ghost sound-toggle" type="button" aria-pressed="true">Sound On</button>
-          <button id="account-action" class="button compact ghost" type="button">Exit</button>
-        </div>
       </header>
 
       <aside id="sidebar" class="sidebar" aria-label="Game navigation">
@@ -104,9 +101,13 @@
           <button class="nav-button" data-panel="collection" type="button"><span>CL</span> Collection</button>
         </nav>
         <div class="sidebar-foot">
-          <p>Active pets</p>
-          <strong id="active-count">0 / 6</strong>
+          <div class="sidebar-keeper"><span>Keeper</span><strong id="keeper-name">Keeper</strong></div>
+          <div class="sidebar-active"><p>Active pets</p><strong id="active-count">0 / 6</strong></div>
           <div class="meter"><span id="active-meter"></span></div>
+          <div class="sidebar-actions">
+            <button id="sound-toggle" class="button compact ghost sound-toggle" type="button" aria-pressed="true">Sound On</button>
+            <button id="account-action" class="button compact ghost" type="button">Exit</button>
+          </div>
         </div>
       </aside>
 

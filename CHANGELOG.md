@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0 — True idle sessions and combat patrols
+
+- Replaced endless food-fed gathering with explicit 1, 2, 4, 8, 12, and 24-hour saved sessions for both pets and the Keeper.
+- Removed food, nutrition, work-speed meal bonuses, and pantry stops from every gathering and production assignment. Meals are now battle healing and post-battle capture offerings only.
+- Added persistent combat patrols that occupy up to three selected pets, continue while the browser is closed, preserve injuries, optionally Auto-eat, and automatically send victories to Processing.
+- Added persistent 1–24 hour Processing shifts: a selected pet waits on the queue, processes patrol remains as they arrive, and works concurrently with the combat party.
+- Kept one-off live hunts as the animated-feeling combat mode with independent attack meters, hit splats, battle sounds, and manual capture decisions.
+- Added 1% maximum-health regeneration per full hour, plus the buildable Resting Hollow regeneration bonus.
+- Added self-healing and team-healing combat abilities to Brook Otter, Dawn Koi, Oasis Crane, and Worldroot Elk.
+- Reduced the starter Ash Raccoon's Mischief aptitude from 8 to 4; it remains a mild Mischief specialist rather than an endgame worker.
+- Isolated live timer boards by screen, so Processing shows Processing jobs instead of unrelated gathering and Mischief assignments.
+- Removed the starter raccoon from login, overview, fallback, and empty-combat branding; raccoon art now appears only when an actual Ash Raccoon is involved.
+- Reworked the logo into a species-neutral den-and-leaf canopy mark.
+- Simplified the mobile header to coins, active workers, storage, and Keeper health; account and sound controls moved into the navigation drawer.
+- Rebalanced low-level action times for long idle sessions and strengthened meal healing so combat food has a clear purpose.
+- Expanded automated coverage to 39 gameplay, patrol, offline, healing, migration, UI, security, and art tests.
+
 ## 0.7.0 — Wilderden identity and passive wilds
 
 - Renamed the game to Wilderden and added a scalable original den-and-tail logo.

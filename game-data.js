@@ -1,8 +1,10 @@
 export const GAME_NAME = "Wilderden";
-export const GAME_VERSION = "0.7.0";
+export const GAME_VERSION = "0.8.0";
 export const MAX_ACTIVE_PETS = 6;
 export const MAX_COMBAT_PETS = 3;
-export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
+export const OFFLINE_CAP_MS = 24 * 60 * 60 * 1000;
+export const MAX_IDLE_HOURS = 24;
+export const ACTION_TIME_SCALE = 6;
 
 export const AFFINITIES = [
   "Ember",
@@ -42,7 +44,7 @@ export const SKILLS = [
   { id: "foraging", name: "Foraging", description: "Gather plants, fruit, fiber, and ingredients." },
   { id: "fishing", name: "Fishing", description: "Catch food and aquatic materials." },
   { id: "processing", name: "Processing", description: "Turn defeated wild pets into useful materials." },
-  { id: "cooking", name: "Cooking", description: "Create meals for work, combat, and capturing." },
+  { id: "cooking", name: "Cooking", description: "Create combat-healing meals and post-battle capture offerings." },
   { id: "crafting", name: "Crafting", description: "Create expedition supplies and useful equipment." },
   { id: "mischief", name: "Mischief", description: "Pilfer ingredients, coins, maps, and rare components." },
   { id: "construction", name: "Construction", description: "Expand the den, storage, and permanent facilities." },
@@ -61,7 +63,7 @@ const pet = (id, name, region, affinity, acquisition, aptitudes, stats, ability,
   acquisition,
   aptitudes: Object.fromEntries(Object.entries(aptitudes).map(([skill, rating]) => [skill, Math.min(10, Number(rating) * 2)])),
   stats: { hp: stats[0], attack: stats[1], defense: stats[2], speed: stats[3] },
-  ability: { name: ability[0], power: ability[1], cooldown: ability[2] },
+  ability: { name: ability[0], power: ability[1], cooldown: ability[2], kind: ability[3] || "damage" },
   passive: { name: passive[0], description: passive[1] },
   captureRate,
   materials,
@@ -69,13 +71,13 @@ const pet = (id, name, region, affinity, acquisition, aptitudes, stats, ability,
 });
 
 export const PET_SPECIES = [
-  pet("ash-raccoon", "Ash Raccoon", "greenhollow", "Umbral", "Common", { mischief: 4, foraging: 2, processing: 2, cooking: 1 }, [92, 15, 11, 16], ["Pocket Sand", 1.35, 4], ["Light Fingers", "+8% Mischief rewards."], 0.12, { "raw-meat": 2, hide: 1, "dark-fur": 1 }, "pets/ash-raccoon.png"),
+  pet("ash-raccoon", "Ash Raccoon", "greenhollow", "Umbral", "Common", { mischief: 2, foraging: 1, processing: 1 }, [92, 15, 11, 16], ["Pocket Sand", 1.35, 4], ["Light Fingers", "+8% Mischief rewards."], 0.12, { "raw-meat": 2, hide: 1, "dark-fur": 1 }, "pets/ash-raccoon.png"),
   pet("moss-hare", "Moss Hare", "greenhollow", "Verdant", "Common", { foraging: 4, cooking: 2, woodcutting: 1 }, [80, 12, 10, 20], ["Briar Kick", 1.4, 4], ["Surefooted", "+5% dodge chance."], 0.12, { "raw-meat": 2, hide: 1, "wild-fiber": 1 }),
-  pet("brook-otter", "Brook Otter", "greenhollow", "Tide", "Common", { fishing: 4, cooking: 2, crafting: 1 }, [88, 14, 11, 18], ["River Rush", 1.45, 4], ["Slick Coat", "+8% resistance to Ember attacks."], 0.11, { "raw-meat": 2, hide: 1, "river-oil": 1 }),
+  pet("brook-otter", "Brook Otter", "greenhollow", "Tide", "Common", { fishing: 4, cooking: 2, crafting: 1 }, [88, 14, 11, 18], ["River Rest", 0.42, 4, "heal-self"], ["Slick Coat", "+8% resistance to Ember attacks."], 0.11, { "raw-meat": 2, hide: 1, "river-oil": 1 }),
   pet("stoneback-boar", "Stoneback Boar", "greenhollow", "Stone", "Common", { mining: 3, construction: 3, processing: 2 }, [118, 15, 17, 10], ["Driving Tusk", 1.5, 5], ["Thick Hide", "+8% maximum health."], 0.1, { "raw-meat": 3, hide: 2, bone: 1 }),
   pet("breeze-finch", "Breeze Finch", "greenhollow", "Gale", "Common", { foraging: 3, mischief: 3, crafting: 1 }, [72, 13, 8, 23], ["Needle Gust", 1.3, 3], ["Tailwind", "+5% team attack speed."], 0.11, { "raw-meat": 1, feather: 2 }),
   pet("ember-mole", "Ember Mole", "greenhollow", "Ember", "Uncommon", { mining: 4, processing: 3, construction: 2 }, [102, 17, 15, 11], ["Coal Claw", 1.55, 5], ["Warm Burrow", "+10% Mining yield chance."], 0.07, { "raw-meat": 2, hide: 1, "ember-gland": 1 }),
-  pet("dawn-koi", "Dawn Koi", "greenhollow", "Radiant", "Uncommon", { fishing: 5, cooking: 2 }, [84, 16, 10, 19], ["Sunscale", 1.5, 4], ["Bright Current", "+8% healing received."], 0.06, { "raw-fish": 3, scale: 2, "sun-oil": 1 }),
+  pet("dawn-koi", "Dawn Koi", "greenhollow", "Radiant", "Uncommon", { fishing: 5, cooking: 2 }, [84, 16, 10, 19], ["Sunlit Current", 0.34, 4, "heal-team"], ["Bright Current", "+8% healing received."], 0.06, { "raw-fish": 3, scale: 2, "sun-oil": 1 }),
   pet("bramble-hedgehog", "Bramble Hedgehog", "greenhollow", "Verdant", "Uncommon", { woodcutting: 4, foraging: 3, processing: 1 }, [106, 14, 18, 9], ["Thorn Roll", 1.45, 4], ["Brambleguard", "Returns a small amount of contact damage."], 0.06, { "raw-meat": 1, hide: 1, thorn: 2 }),
   pet("static-fox", "Static Fox", "greenhollow", "Spark", "Rare", { mischief: 5, crafting: 3, foraging: 2 }, [86, 20, 10, 24], ["Snapflash", 1.65, 4], ["Quick Start", "Begins combat with 35% attack charge."], 0.025, { "raw-meat": 2, hide: 1, "spark-core": 1 }),
   pet("frosthorn-stag", "Frosthorn Stag", "greenhollow", "Frost", "Area Boss", { woodcutting: 5, foraging: 3, construction: 2 }, [144, 22, 18, 15], ["Winter Crown", 1.85, 5], ["Cold Resolve", "+10% defence below half health."], 0.008, { "raw-meat": 4, hide: 3, antler: 2, "frost-core": 1 }),
@@ -94,7 +96,7 @@ export const PET_SPECIES = [
   pet("dune-fennec", "Dune Fennec", "sunscar", "Gale", "Common", { mischief: 5, foraging: 4, crafting: 2 }, [116, 33, 18, 34], ["Sandstep", 1.7, 3], ["Heatwise", "+10% resistance to Ember damage."], 0.085, { "raw-meat": 2, hide: 2, "sand-silk": 1 }),
   pet("iron-tortoise", "Iron Tortoise", "sunscar", "Stone", "Common", { construction: 5, mining: 4, processing: 3 }, [210, 29, 42, 7], ["Iron Turn", 1.8, 6], ["Fortress Shell", "+15% maximum defence."], 0.08, { "raw-meat": 3, shell: 3, "iron-plate": 1 }),
   pet("cinder-hyena", "Cinder Hyena", "sunscar", "Ember", "Common", { processing: 5, cooking: 3, mischief: 2 }, [142, 38, 24, 27], ["Cinder Laugh", 1.8, 4], ["Pack Pressure", "+4% attack for each ally."], 0.08, { "raw-meat": 4, hide: 2, "ember-gland": 2 }),
-  pet("oasis-crane", "Oasis Crane", "sunscar", "Tide", "Common", { foraging: 5, fishing: 4, cooking: 2 }, [119, 31, 19, 35], ["Reed Spear", 1.7, 4], ["Clear Water", "+10% meal healing."], 0.08, { "raw-meat": 2, feather: 3, "river-oil": 2 }),
+  pet("oasis-crane", "Oasis Crane", "sunscar", "Tide", "Common", { foraging: 5, fishing: 4, cooking: 2 }, [119, 31, 19, 35], ["Clearwater Grace", 0.4, 4, "heal-team"], ["Clear Water", "+10% meal healing."], 0.08, { "raw-meat": 2, feather: 3, "river-oil": 2 }),
   pet("glass-scorpion", "Glass Scorpion", "sunscar", "Radiant", "Uncommon", { mischief: 5, mining: 3, processing: 3 }, [132, 41, 25, 30], ["Prism Sting", 1.9, 4], ["Refraction", "+8% dodge chance after being hit."], 0.04, { "raw-meat": 1, carapace: 3, "sun-oil": 2 }),
   pet("thunder-beetle", "Thunder Beetle", "sunscar", "Spark", "Uncommon", { mining: 5, construction: 3, crafting: 2 }, [156, 37, 33, 23], ["Rolling Thunder", 1.85, 5], ["Static Shell", "Attackers may lose attack charge."], 0.04, { "raw-meat": 1, carapace: 3, "spark-core": 2 }),
   pet("shade-vulture", "Shade Vulture", "sunscar", "Umbral", "Uncommon", { processing: 5, mischief: 4, foraging: 1 }, [126, 42, 21, 32], ["Carrion Moon", 1.9, 4], ["Opportunist", "+15% damage to targets below half health."], 0.035, { "raw-meat": 2, feather: 3, "dark-fur": 1 }),
@@ -114,7 +116,7 @@ export const PET_SPECIES = [
   pet("stormhorn-elk", "Stormhorn Elk", "stormreach", "Spark", "Area Boss", { construction: 5, foraging: 4, mischief: 3 }, [302, 74, 52, 36], ["Skybreaker", 2.4, 5], ["Storm Field", "All allies begin with 20% attack charge."], 0.0035, { "raw-meat": 6, hide: 4, antler: 3, "spark-core": 4 }),
 
   pet("crown-phoenix", "Crown Phoenix", "starfall", "Ember", "Rare", { cooking: 5, foraging: 4, crafting: 3 }, [244, 82, 38, 49], ["Crownflare", 2.35, 4], ["Rekindle", "Once per combat, survive a fatal hit at 15% health."], 0.009, { feather: 5, "ember-gland": 5, "crown-ash": 1 }),
-  pet("worldroot-elk", "Worldroot Elk", "starfall", "Verdant", "Rare", { woodcutting: 5, foraging: 5, construction: 4 }, [318, 75, 56, 35], ["Rootquake", 2.35, 5], ["Living Grove", "+8% team health and defence."], 0.009, { "raw-meat": 6, hide: 4, antler: 4, "heartwood-core": 3 }),
+  pet("worldroot-elk", "Worldroot Elk", "starfall", "Verdant", "Rare", { woodcutting: 5, foraging: 5, construction: 4 }, [318, 75, 56, 35], ["Living Grove", 0.48, 5, "heal-team"], ["Deep Roots", "+8% team health and defence."], 0.009, { "raw-meat": 6, hide: 4, antler: 4, "heartwood-core": 3 }),
   pet("abyssal-leviathan", "Abyssal Leviathan", "starfall", "Tide", "Rare", { fishing: 5, processing: 5, cooking: 3 }, [358, 83, 58, 29], ["Abyssal Wake", 2.5, 6], ["Pressureborn", "+15% damage against bosses."], 0.008, { "raw-fish": 9, scale: 5, "river-oil": 5, "abyss-pearl": 1 }),
   pet("titan-mole", "Titan Mole", "starfall", "Stone", "Rare", { mining: 5, construction: 5, processing: 4 }, [344, 79, 66, 20], ["Worldsplitter", 2.45, 6], ["Bedrock", "+15% maximum defence."], 0.008, { "raw-meat": 6, hide: 4, "obsidian-knuckle": 3, "titan-ore": 1 }),
   pet("sky-serpent", "Sky Serpent", "starfall", "Gale", "Rare", { mischief: 5, foraging: 4, crafting: 3 }, [260, 86, 40, 57], ["Heavens Coil", 2.4, 4], ["Open Sky", "+12% attack speed."], 0.007, { "raw-meat": 4, scale: 5, "storm-silk": 2 }),
@@ -180,14 +182,14 @@ export const ITEMS = {
   "prism-heart": { name: "Prism Heart", category: "material" },
   "stolen-spice": { name: "Stolen Spice", category: "ingredient" },
   "relic-dust": { name: "Relic Dust", category: "material" },
-  "camp-skewer": { name: "Camp Skewer", category: "meal", nutrition: 6, heal: 18, captureBonus: 0.02, workBonus: 0 },
-  "river-stew": { name: "River Stew", category: "meal", nutrition: 12, heal: 32, captureBonus: 0.05, workBonus: 0.04 },
-  "hunter-feast": { name: "Hunter's Feast", category: "meal", nutrition: 22, heal: 55, captureBonus: 0.1, workBonus: 0.08 },
-  "moon-broth": { name: "Moon Broth", category: "meal", nutrition: 40, heal: 85, captureBonus: 0.18, workBonus: 0.12 },
+  "camp-skewer": { name: "Camp Skewer", category: "meal", heal: 36, captureBonus: 0.02 },
+  "river-stew": { name: "River Stew", category: "meal", heal: 64, captureBonus: 0.05 },
+  "hunter-feast": { name: "Hunter's Feast", category: "meal", heal: 110, captureBonus: 0.1 },
+  "moon-broth": { name: "Moon Broth", category: "meal", heal: 170, captureBonus: 0.18 },
   "trail-pack": { name: "Trail Pack", category: "supply" },
   "foundry-key": { name: "Foundry Key", category: "supply" },
   "storm-seal": { name: "Storm Seal", category: "supply" },
-  "field-ration": { name: "Field Ration", category: "meal", nutrition: 4, heal: 12, captureBonus: 0.01, workBonus: 0 },
+  "field-ration": { name: "Field Ration", category: "meal", heal: 22, captureBonus: 0.01 },
   "pet-tonic": { name: "Pet Tonic", category: "medicine", heal: 45 },
   "keeper-tonic": { name: "Keeper Tonic", category: "medicine", heal: 45 },
   "copper-axe": { name: "Copper Axe", category: "tool", slot: "tool", skill: "woodcutting", level: 1, speedBonus: 0.08 },
@@ -213,7 +215,7 @@ export const EQUIPMENT_SLOTS = [
 ];
 
 export const STORE_ITEMS = [
-  { itemId: "field-ration", price: 8, description: "Basic work food and a small combat heal." },
+  { itemId: "field-ration", price: 8, description: "Basic battle food for Auto-eat and manual recovery." },
   { itemId: "pet-tonic", price: 24, description: "Restores 45 health to one injured pet." },
   { itemId: "keeper-tonic", price: 24, description: "Restores 45 Keeper health." },
   { itemId: "copper-axe", price: 70, description: "Starter Woodcutting tool; 8% faster actions." },
@@ -281,7 +283,7 @@ export const BUILDINGS = [
   { id: "workshop", name: "Craft Workshop", level: 5, maxLevel: 1, description: "+8% Crafting bonus-output chance.", costs: { hardwood: 24, iron: 18, quartz: 4 }, duration: 90 },
   { id: "training-yard", name: "Training Yard", level: 5, maxLevel: 1, description: "+5% pet experience from every activity.", costs: { hardwood: 28, iron: 16, hide: 12 }, duration: 95 },
   { id: "watchtower", name: "Watchtower", level: 7, maxLevel: 1, description: "+8% Mischief coins and bonus output.", costs: { hardwood: 30, silver: 10, "wild-fiber": 14 }, duration: 110 },
-  { id: "mess-hall", name: "Mess Hall", level: 9, maxLevel: 1, description: "Meals provide 5% more working nutrition.", costs: { hardwood: 34, iron: 22, "stolen-spice": 8 }, duration: 120 },
+  { id: "mess-hall", name: "Resting Hollow", level: 9, maxLevel: 1, description: "+25% passive health regeneration for the Keeper and resting pets.", costs: { hardwood: 34, iron: 22, "stolen-spice": 8 }, duration: 120 },
   { id: "prismatic-beacon", name: "Prismatic Beacon", level: 15, maxLevel: 1, description: "+4 percentage points to every dungeon success chance.", costs: { "prism-heart": 1, starstone: 20, "relic-dust": 24 }, duration: 240 },
 ];
 
@@ -347,14 +349,13 @@ export function petAptitude(speciesOrId, skillId) {
   return Math.max(1, Math.min(10, Number(species?.aptitudes?.[skillId] || 1)));
 }
 
-export function petActionDuration(task, speciesOrId, mealId = "") {
+export function petActionDuration(task, speciesOrId) {
   const aptitude = petAptitude(speciesOrId, task.skill);
   const difficulty = Math.max(1, Number(task.level || 1));
   const mismatch = Math.max(0, difficulty - aptitude * 10);
   const aptitudeScale = 1 + (10 - aptitude) * 0.55;
   const difficultyScale = 1 + mismatch / 70;
-  const mealScale = 1 - Number(ITEMS[mealId]?.workBonus || 0);
-  return Math.max(2000, Math.round(Number(task.duration || 5) * 1000 * aptitudeScale * difficultyScale * mealScale));
+  return Math.max(5000, Math.round(Number(task.duration || 5) * 1000 * ACTION_TIME_SCALE * aptitudeScale * difficultyScale));
 }
 
 export function inventoryName(itemId) {
