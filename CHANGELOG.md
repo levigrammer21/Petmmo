@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.2 — Live combat first
+
+- Removed the visible combat patrol/session-duration flow. Combat now presents one Start fighting action instead of separate idle-patrol and live-hunt modes.
+- Removed combat-session countdowns and next-encounter countdowns from the Combat screen.
+- Live combat chains victories into the next area encounter after a short 650ms handoff instead of waiting minutes between fights while the Combat screen is open.
+- Preserved offline idling by parking the same continuous party into the existing saved combat backend when the Combat screen is left or the tab is hidden, then returning immediately to live fights when Combat is opened again.
+- Shortened battle playback to a 3.5–18 second presentation range and removed the battle elapsed-time clock while keeping attack meters, hit splats, healing, abilities, and the battle log.
+- Added a direct Heal button to downed pet cards and allowed injured/downed pets to be selected by the healing modal even when their status is not plain idle.
+- Made Wild Berries (+10 HP), Root Vegetables (+8 HP), and Embercaps (+14 HP) directly edible healing resources.
+- Kept the earlier processing presentation target near 10 seconds for strong processors and lowered the first dungeon unlock/power curve.
+
 ## 0.8.1 — Combat flow and early-game pacing
 
 - Reframed persistent patrols in the interface as continuous combat: pets are fighting, not being sent away on a separate expedition-style minigame.
