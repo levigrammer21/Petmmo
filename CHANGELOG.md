@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 — Taming, visible Processing, and combat depth
+
+- Made taming explicit: enable Auto-tame in Combat and choose an offering. Each victory can consume one offering and roll the visible species tame chance.
+- Added offering bonuses and Pet Mastery bonuses to taming odds while preserving species rarity differences.
+- Rebuilt Processing visibility with exact remains count, species-by-species queue, material yields, assigned processors, and per-remain speed.
+- Added combat affinities, critical hits, pet ability procs, Keeper combat styles, streaks, best streak tracking, and a rolling live combat feed.
+- Added an illustrated Keeper avatar treatment across the home screen, battle party, and healing UI.
+- Added per-action Mastery 1–99; repeated actions gain Mastery and gradually unlock up to a 10% double-output chance.
+- Added region collection progress and a clear in-game taming guide in the Pet Den.
+- Kept combat continuous, pet work indefinite, and offline progress capped at 24 hours with no session timers.
+
+
 ## 1.0.0 — Full idle-RPG rebuild
 
 - Rebuilt Wilderden around continuous Melvor-style idle actions instead of fixed work sessions.

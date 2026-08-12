@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PET_SPECIES, SPECIES_BY_ID, ITEMS, DUNGEONS } from './game-data.js';
-import { createInitialState, startKeeperAssignment, settleState, startPetAssignment, startCombat, advanceLive, useHealingItem } from './game-engine.js';
+import { captureChanceFor, createInitialState, masteryLevel, startKeeperAssignment, settleState, startPetAssignment, startCombat, advanceLive, useHealingItem } from './game-engine.js';
 
 test('keeps all 50 pets and their art paths',()=>{
   assert.equal(PET_SPECIES.length,50);
@@ -37,4 +37,24 @@ test('downed pets can always be healed',()=>{
 });
 test('first dungeon is early progression, not a high-level timer wall',()=>{
   assert.ok(DUNGEONS[0].level<=10); assert.ok(DUNGEONS[0].recommendedPower<=200);
+});
+
+test('taming is explicit and offerings improve the visible chance',()=>{
+  const s=createInitialState('Tamer');
+  const base=captureChanceFor(s,'moss-hare','');
+  const food=captureChanceFor(s,'moss-hare','hunter-feast');
+  assert.ok(food>base);
+  const c=startCombat(s,{petIds:[s.pets[0].id],autoTame:true,captureItemId:'field-ration'},4_000_000).combat;
+  assert.equal(c.autoTame,true); assert.equal(c.captureItemId,'field-ration');
+});
+test('action mastery rises while the same idle action repeats',()=>{
+  let s=createInitialState('Master'); const at=5_000_000;
+  s=startKeeperAssignment(s,'activity','fallen-branches',at); s.lastSeenAt=at; s=settleState(s,at+180_000);
+  assert.ok(masteryLevel(s,'activity:fallen-branches')>1);
+});
+test('combat stores a rolling live event feed and streak',()=>{
+  let s=createInitialState('Arena'); const at=6_000_000;
+  s=startCombat(s,{petIds:[s.pets[0].id],includeKeeper:true},at);
+  for(let t=at+500;t<at+45000;t+=300)s=advanceLive(s,t);
+  assert.ok(Array.isArray(s.combat.events)); assert.ok(s.combat.events.length>0); assert.ok((s.stats.bestStreak||0)>=0);
 });

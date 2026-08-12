@@ -1,7 +1,7 @@
 import {
   ACTIVITIES, ACTIVITY_BY_ID, BUILDINGS, DUNGEONS, DUNGEON_BY_ID, ITEMS, MAX_ACTIVE_PETS,
   MAX_COMBAT_PETS, PET_SPECIES, RECIPE_BY_ID, RECIPES, REGIONS, SPECIES_BY_ID,
-  inventoryName, levelFromXp, petActionDuration, scaledPetStats
+  affinityMultiplier, inventoryName, levelFromXp, petActionDuration, scaledPetStats
 } from './game-data.js';
 
 export const OFFLINE_CAP_MS = 24 * 60 * 60 * 1000;
@@ -31,8 +31,8 @@ export function createInitialState(name='Keeper'){
     inventory:{'wild-berries':12, herb:8, 'raw-meat':8, 'field-ration':6, 'pet-tonic':2, 'keeper-tonic':2, 'wooden-sword':1, 'cloth-tunic':1},
     equipment:{weapon:'wooden-sword', body:'cloth-tunic', feet:null, tool:null},
     pets:[starter], discoveries:['ash-raccoon'],
-    keeperAssignment:null, petAssignments:{}, remains:[], combat:null,
-    buildings:{den:0,storage:0}, stats:{actions:0,kills:0,captures:0,processed:0,dungeons:0},
+    keeperAssignment:null, petAssignments:{}, remains:[], combat:null, mastery:{},
+    buildings:{den:0,storage:0}, stats:{actions:0,kills:0,captures:0,processed:0,dungeons:0,bestStreak:0},
     log:[{at:Date.now(), text:'Your den is ready. Pick a skill and start idling.'}],
     lastSeenAt:Date.now(), lastSavedAt:Date.now()
   };
@@ -48,10 +48,11 @@ export function normalizeState(raw, name='Keeper'){
   s.petAssignments=raw.petAssignments && typeof raw.petAssignments==='object' ? raw.petAssignments : {};
   s.pets=Array.isArray(raw.pets)&&raw.pets.length?raw.pets:[base.pets[0]];
   s.remains=Array.isArray(raw.remains)?raw.remains:[];
+  s.mastery=raw.mastery && typeof raw.mastery==='object' ? raw.mastery : {};
+  s.stats={...base.stats,...(raw.stats||{})};
   s.discoveries=Array.isArray(raw.discoveries)?raw.discoveries:['ash-raccoon'];
   s.log=Array.isArray(raw.log)?raw.log.slice(-80):[];
   s.buildings={...base.buildings,...(raw.buildings||{})};
-  s.stats={...base.stats,...(raw.stats||{})};
   for(const pet of s.pets){
     const max=scaledPetStats(pet).hp;
     pet.currentHp=clamp(Number.isFinite(Number(pet.currentHp))?Number(pet.currentHp):max,0,max);
@@ -68,6 +69,20 @@ function addPetXp(s,pet,xp){
   while(pet.level<100){ const need=Math.floor(70*Math.pow(pet.level,2.08)); if(pet.xp<need)break; pet.xp-=need; pet.level++; pet.currentHp=scaledPetStats(pet).hp; }
   addSkillXp(s,'petMastery',Math.max(1,Math.floor(xp*.2)));
 }
+
+export function masteryLevel(state,key){
+  const xp=Math.max(0,Number(state.mastery?.[key]||0));
+  return Math.min(99,1+Math.floor(Math.sqrt(xp/18)));
+}
+function addMasteryXp(s,key,xp){ if(!s.mastery)s.mastery={}; s.mastery[key]=(s.mastery[key]||0)+xp; }
+function masteryKey(a){ return `${a.type}:${a.targetId}`; }
+export function captureChanceFor(state,speciesId,itemId=''){
+  const species=SPECIES_BY_ID[speciesId]; if(!species)return 0;
+  const item=ITEMS[itemId];
+  const mastery=Math.min(.06,skillLevel(state,'petMastery')*.0006);
+  return Math.min(.45,Math.max(.005,(species.captureRate||.02)*1.45 + (item?.captureBonus||0) + mastery));
+}
+
 function assignmentInterval(assignment, pet=null){
   if(assignment.type==='processing'){
     if(!pet)return PROCESSING_MS;
@@ -85,20 +100,22 @@ function doCycle(s,assignment,pet=null){
     const level=skillLevel(s,task.skill); if(level<task.level)return false;
     const apt=pet?clamp(Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes?.[task.skill]||1),1,10):1;
     const bonus=pet && Math.random()<Math.max(0,(apt-1)*0.035) ? 1 : 0;
-    for(const [id,q] of Object.entries(task.rewards||{})) grantItem(s,id,q*(1+bonus));
+    const ml=masteryLevel(s,masteryKey(assignment)); const masteryDouble=Math.random()<Math.min(.10,ml*.001);
+    for(const [id,q] of Object.entries(task.rewards||{})) grantItem(s,id,q*(1+bonus)*(masteryDouble?2:1));
     if(task.coins)s.profile.coins+=(task.coins||0)*(1+bonus);
-    addSkillXp(s,task.skill,task.xp||10); if(pet)addPetXp(s,pet,Math.max(4,Math.floor((task.xp||10)*.55)));
+    addSkillXp(s,task.skill,task.xp||10); addMasteryXp(s,masteryKey(assignment),Math.max(2,Math.floor((task.xp||10)*.55))); if(pet)addPetXp(s,pet,Math.max(4,Math.floor((task.xp||10)*.55)));
   } else if(assignment.type==='recipe'){
     const r=RECIPE_BY_ID[assignment.targetId]; if(!r || skillLevel(s,r.skill)<r.level || !canRecipe(s,r))return false;
     for(const [id,q] of Object.entries(r.ingredients))takeItem(s,id,q);
-    for(const [id,q] of Object.entries(r.output))grantItem(s,id,q);
-    addSkillXp(s,r.skill,r.xp||10); if(pet)addPetXp(s,pet,Math.max(4,Math.floor((r.xp||10)*.5)));
+    const ml=masteryLevel(s,masteryKey(assignment)); const masteryDouble=Math.random()<Math.min(.10,ml*.001);
+    for(const [id,q] of Object.entries(r.output))grantItem(s,id,q*(masteryDouble?2:1));
+    addSkillXp(s,r.skill,r.xp||10); addMasteryXp(s,masteryKey(assignment),Math.max(2,Math.floor((r.xp||10)*.5))); if(pet)addPetXp(s,pet,Math.max(4,Math.floor((r.xp||10)*.5)));
   } else if(assignment.type==='processing'){
     const remain=s.remains.shift(); if(!remain)return false;
     const species=SPECIES_BY_ID[remain.speciesId]; if(!species)return false;
     for(const [id,q] of Object.entries(species.materials||{}))grantItem(s,id,q);
     s.profile.coins+=Math.max(2,Math.floor(scaledPetStats({speciesId:species.id,level:1,stars:1}).power/25));
-    addSkillXp(s,'processing',18+Math.floor((REGIONS.findIndex(r=>r.id===species.region)+1)*8));
+    addSkillXp(s,'processing',18+Math.floor((REGIONS.findIndex(r=>r.id===species.region)+1)*8)); addMasteryXp(s,masteryKey(assignment),10);
     if(pet)addPetXp(s,pet,10); s.stats.processed++;
   }
   assignment.completed=(assignment.completed||0)+1; s.stats.actions++; return true;
@@ -157,46 +174,67 @@ function autoHealActor(s,pet=null){
   takeItem(s,pick[0],1); const healed=Math.min(ITEMS[pick[0]].heal,max-hp); if(pet)pet.currentHp+=healed; else s.profile.currentHp+=healed; return true;
 }
 function partyLiving(s,c){ return c.petIds.some(id=>Number(s.pets.find(p=>p.id===id)?.currentHp||0)>0) || (c.includeKeeper&&s.profile.currentHp>0); }
+function pushCombatEvent(c,at,text,kind='hit',amount=0,actor=''){
+  c.lastEvent={at,text,kind,amount,actor}; c.events=c.events||[]; c.events.push(c.lastEvent); c.events=c.events.slice(-12);
+}
 function partyAttack(s,at){
-  const c=s.combat,e=c.enemy;if(!e)return;
-  let attack=0, speed=0, actors=0;
-  for(const id of c.petIds){ const p=s.pets.find(x=>x.id===id); if(p&&p.currentHp>0){const st=scaledPetStats(p);attack+=st.attack;speed+=st.speed;actors++;} }
-  if(c.includeKeeper&&s.profile.currentHp>0){attack+=12+skillLevel(s,c.style||'melee')*2;speed+=16;actors++;}
-  const dmg=Math.max(1,Math.round(attack*.55 - e.defense*.22 + Math.random()*Math.max(3,attack*.18)));
-  e.hp=Math.max(0,e.hp-dmg); c.lastEvent={at,text:`Your party hits ${SPECIES_BY_ID[e.speciesId].name} for ${dmg}.`,kind:'hit'};
-  c.nextPartyAt=at+Math.max(650,2100-(speed/Math.max(1,actors))*28);
-  if(e.hp<=0)winBattle(s,at);
+  const c=s.combat,e=c.enemy;if(!e)return; const enemySpecies=SPECIES_BY_ID[e.speciesId];
+  const actors=[];
+  for(const id of c.petIds){const p=s.pets.find(x=>x.id===id);if(p&&p.currentHp>0)actors.push({kind:'pet',pet:p,species:SPECIES_BY_ID[p.speciesId]});}
+  if(c.includeKeeper&&s.profile.currentHp>0)actors.push({kind:'keeper'});
+  if(!actors.length)return;
+  const actor=actors[Math.floor(Math.random()*actors.length)]; let attack=0,speed=16,name='Keeper',mult=1;
+  if(actor.kind==='pet'){
+    const st=scaledPetStats(actor.pet); attack=st.attack; speed=st.speed; name=actor.pet.customName||actor.species.name; mult=affinityMultiplier(actor.species.affinity,enemySpecies.affinity);
+    const abilityChance=Math.min(.28,1/Math.max(3,Number(actor.species.ability?.cooldown||5)+1));
+    if(Math.random()<abilityChance){
+      if(actor.species.ability.kind==='heal-self'){
+        const heal=Math.max(4,Math.round(st.hp*actor.species.ability.power)); actor.pet.currentHp=Math.min(st.hp,actor.pet.currentHp+heal); pushCombatEvent(c,at,`${name} uses ${actor.species.ability.name} and heals ${heal} HP!`,'ability',heal,name); c.nextPartyAt=at+Math.max(600,2050-speed*28); return;
+      }
+      if(actor.species.ability.kind==='heal-team'){
+        const living=c.petIds.map(id=>s.pets.find(p=>p.id===id)).filter(p=>p&&p.currentHp>0); const target=living.sort((a,b)=>a.currentHp/scaledPetStats(a).hp-b.currentHp/scaledPetStats(b).hp)[0];
+        if(target){const max=scaledPetStats(target).hp,heal=Math.max(4,Math.round(max*actor.species.ability.power));target.currentHp=Math.min(max,target.currentHp+heal);pushCombatEvent(c,at,`${name} uses ${actor.species.ability.name} to heal ${target.customName||SPECIES_BY_ID[target.speciesId].name} for ${heal}!`,'ability',heal,name);c.nextPartyAt=at+Math.max(600,2050-speed*28);return;}
+      }
+      attack*=actor.species.ability.power||1.4;
+    }
+  } else { attack=12+skillLevel(s,c.style||'melee')*2+(ITEMS[s.equipment?.weapon]?.attack||0); speed=16+(ITEMS[s.equipment?.weapon]?.speed||0)*.25; }
+  const crit=Math.random()<.11; let dmg=Math.max(1,Math.round((attack*.72*mult - e.defense*.18 + Math.random()*Math.max(3,attack*.20))*(crit?1.65:1)));
+  e.hp=Math.max(0,e.hp-dmg); pushCombatEvent(c,at,`${name}${crit?' CRITS':''} ${enemySpecies.name} for ${dmg}${mult>1?' (advantage!)':''}.`,crit?'crit':'hit',dmg,name);
+  c.nextPartyAt=at+Math.max(600,2050-speed*28); if(e.hp<=0)winBattle(s,at);
 }
 function enemyAttack(s,at){
   const c=s.combat,e=c.enemy;if(!e)return;
   const targets=[]; for(const id of c.petIds){const p=s.pets.find(x=>x.id===id);if(p&&p.currentHp>0)targets.push(p);} if(c.includeKeeper&&s.profile.currentHp>0)targets.push(null);
-  if(!targets.length){ c.state='stopped'; c.lastEvent={at,text:'Your party is down. Heal up and resume.',kind:'down'}; return; }
+  if(!targets.length){ c.state='stopped'; c.streak=0; pushCombatEvent(c,at,'Your party is down. Heal up and resume.','down'); return; }
   const target=targets[Math.floor(Math.random()*targets.length)];
-  const def=target?scaledPetStats(target).defense:6+skillLevel(s,'combat'); const dmg=Math.max(1,Math.round(e.attack*.55-def*.25+Math.random()*Math.max(2,e.attack*.15)));
+  const def=target?scaledPetStats(target).defense:6+skillLevel(s,'combat'); const targetSpecies=target?SPECIES_BY_ID[target.speciesId]:null; const mult=targetSpecies?affinityMultiplier(SPECIES_BY_ID[e.speciesId].affinity,targetSpecies.affinity):1; const dmg=Math.max(1,Math.round((e.attack*.55-def*.25+Math.random()*Math.max(2,e.attack*.15))*mult));
   if(target){target.currentHp=Math.max(0,target.currentHp-dmg); if(c.autoEat)autoHealActor(s,target);} else {s.profile.currentHp=Math.max(0,s.profile.currentHp-dmg); if(c.autoEat)autoHealActor(s,null);}
-  c.lastEvent={at,text:`${SPECIES_BY_ID[e.speciesId].name} hits ${target?(target.customName||SPECIES_BY_ID[target.speciesId].name):'Keeper'} for ${dmg}.`,kind:'enemy'};
+  pushCombatEvent(c,at,`${SPECIES_BY_ID[e.speciesId].name} hits ${target?(target.customName||SPECIES_BY_ID[target.speciesId].name):'Keeper'} for ${dmg}${mult>1?' (advantage!)':''}.`,'enemy',dmg,SPECIES_BY_ID[e.speciesId].name);
   c.nextEnemyAt=at+Math.max(900,2700-e.speed*34);
-  if(!partyLiving(s,c)){c.state='stopped';c.lastEvent={at,text:'Your party is down. Heal them, then resume combat.',kind:'down'};}
+  if(!partyLiving(s,c)){c.state='stopped';c.streak=0;pushCombatEvent(c,at,'Your party is down. Heal them, then resume combat.','down');}
 }
 function winBattle(s,at){
-  const c=s.combat, species=SPECIES_BY_ID[c.enemy.speciesId]; s.stats.kills++; addSkillXp(s,'combat',20+REGIONS.findIndex(r=>r.id===species.region)*18);
+  const c=s.combat, species=SPECIES_BY_ID[c.enemy.speciesId]; s.stats.kills++; c.streak=(c.streak||0)+1; s.stats.bestStreak=Math.max(s.stats.bestStreak||0,c.streak);
+  addSkillXp(s,'combat',20+REGIONS.findIndex(r=>r.id===species.region)*18); addSkillXp(s,c.style||'melee',8+REGIONS.findIndex(r=>r.id===species.region)*5);
   for(const id of c.petIds){const p=s.pets.find(x=>x.id===id);if(p&&p.currentHp>0)addPetXp(s,p,12);}
   s.remains.push({id:uid('rem'),speciesId:species.id,acquiredAt:at}); if(s.remains.length>500)s.remains.splice(0,s.remains.length-500);
-  s.profile.coins+=3+Math.max(0,REGIONS.findIndex(r=>r.id===species.region))*5;
-  const captureChance=Math.min(.16,(species.captureRate||.02)*1.25);
-  if(Math.random()<captureChance && s.pets.length<denCapacity(s)){
-    const p=createPetInstance(species.id,'combat'); s.pets.push(p); if(!s.discoveries.includes(species.id))s.discoveries.push(species.id); s.stats.captures++; c.lastEvent={at,text:`Tamed ${species.name}! It joined your den.`,kind:'capture'};
-  } else c.lastEvent={at,text:`Defeated ${species.name}. Next fight incoming.`,kind:'win'};
-  if(c.dungeonId){
-    const d=DUNGEON_BY_ID[c.dungeonId]; for(const [id,q] of Object.entries(d.rewards||{}))grantItem(s,id,q); s.stats.dungeons++; c.dungeonId=null; c.state='stopped'; c.enemy=null; c.lastEvent={at,text:`${d.name} cleared. Rewards claimed.`,kind:'win'}; return;
+  const regionIndex=Math.max(0,REGIONS.findIndex(r=>r.id===species.region)); s.profile.coins+=3+regionIndex*5+Math.floor((c.streak||0)/10);
+  let tamed=false;
+  if(c.autoTame && s.pets.length<denCapacity(s)){
+    const offering=c.captureItemId; const hasOffering=offering && (s.inventory[offering]||0)>0;
+    if(hasOffering)takeItem(s,offering,1);
+    const chance=captureChanceFor(s,species.id,hasOffering?offering:'');
+    if(Math.random()<chance){const p=createPetInstance(species.id,'combat');s.pets.push(p);if(!s.discoveries.includes(species.id))s.discoveries.push(species.id);s.stats.captures++;tamed=true;pushCombatEvent(c,at,`Tamed ${species.name}! ${hasOffering?inventoryName(offering)+' worked.':'A lucky bond formed.'}`,'capture',0,species.name);}
   }
-  c.enemy=null; c.state='between'; c.nextSpawnAt=at+BATTLE_RESTART_MS;
+  if(!tamed)pushCombatEvent(c,at,`Defeated ${species.name}. Remains added to Processing.`, 'win',0,species.name);
+  if(c.dungeonId){const d=DUNGEON_BY_ID[c.dungeonId];for(const [id,q] of Object.entries(d.rewards||{}))grantItem(s,id,q);s.stats.dungeons++;c.dungeonId=null;c.state='stopped';c.enemy=null;pushCombatEvent(c,at,`${d.name} cleared. Rewards claimed.`,'win');return;}
+  c.enemy=null;c.state='between';c.nextSpawnAt=at+BATTLE_RESTART_MS;
 }
-export function startCombat(state,{regionId='greenhollow',petIds=[],includeKeeper=true,style='melee',autoEat=true}={},at=Date.now()){
-  const s=clone(state); const ids=petIds.slice(0,MAX_COMBAT_PETS).filter(id=>s.pets.some(p=>p.id===id&&p.currentHp>0));
+export function startCombat(state,{regionId='greenhollow',petIds=[],includeKeeper=true,style='melee',autoEat=true,autoTame=true,captureItemId='field-ration'}={},at=Date.now()){
+  const s=clone(state); const region=REGIONS.find(r=>r.id===regionId)||REGIONS[0]; if(skillLevel(s,'combat')<region.level)throw Error(`Combat level ${region.level} required for ${region.name}.`); const ids=petIds.slice(0,MAX_COMBAT_PETS).filter(id=>s.pets.some(p=>p.id===id&&p.currentHp>0));
   if(!ids.length&&!includeKeeper)throw Error('Choose at least one living fighter.');
   for(const id of ids){delete s.petAssignments[id]; const p=s.pets.find(x=>x.id===id);if(p)p.status='combat';}
-  s.combat={regionId,petIds:ids,includeKeeper,style,autoEat,state:'fighting',battle:0,lastEvent:null,lastAdvancedAt:at}; spawnEnemy(s,null,at); return s;
+  s.combat={regionId,petIds:ids,includeKeeper,style,autoEat,autoTame,captureItemId,state:'fighting',battle:0,streak:0,lastEvent:null,events:[],lastAdvancedAt:at}; spawnEnemy(s,null,at); return s;
 }
 export function stopCombat(state){const s=clone(state);if(s.combat){for(const id of s.combat.petIds){const p=s.pets.find(x=>x.id===id);if(p)p.status='idle';}}s.combat=null;return s;}
 export function resumeCombat(state,at=Date.now()){const s=clone(state);if(!s.combat)return s;if(!partyLiving(s,s.combat))return s;s.combat.state='fighting';if(!s.combat.enemy)spawnEnemy(s,null,at);return s;}

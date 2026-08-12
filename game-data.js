@@ -1,5 +1,5 @@
 export const GAME_NAME = "Wilderden";
-export const GAME_VERSION = "1.0.0";
+export const GAME_VERSION = "1.1.0";
 export const MAX_ACTIVE_PETS = 6;
 export const MAX_COMBAT_PETS = 3;
 export const OFFLINE_CAP_MS = 24 * 60 * 60 * 1000;

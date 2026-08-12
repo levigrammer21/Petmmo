@@ -30,3 +30,8 @@ firebase deploy --only firestore:rules,firestore:indexes
 ```
 
 No Cloud Functions, Storage, or Blaze billing are required.
+
+
+## 1.1 gameplay depth
+
+Taming is handled from Combat: turn on Auto-tame and choose a food offering. Victories roll a visible tame chance based on species rarity, offering quality, and Pet Mastery. Processing now exposes the complete remains queue and processors. Individual actions have Mastery levels from 1–99, and live combat uses affinity matchups, crits, pet abilities, combat styles, and streaks without adding search delays or session timers.
