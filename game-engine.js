@@ -11,9 +11,12 @@ import {
   RECIPE_BY_ID,
   SKILLS,
   SPECIES_BY_ID,
+  STORE_ITEMS,
   affinityMultiplier,
   aptitudeYield,
   levelCapForStars,
+  petActionDuration,
+  petAptitude,
   scaledPetStats,
   xpForNextLevel,
 } from "./game-data.js";
@@ -35,7 +38,7 @@ export class GameError extends Error {
 export function createPetInstance(speciesId, source = "starter") {
   const species = SPECIES_BY_ID[speciesId];
   if (!species) throw new GameError("Unknown pet species.", "not-found");
-  return {
+  const instance = {
     id: randomId("pet"),
     speciesId,
     customName: "",
@@ -47,12 +50,14 @@ export function createPetInstance(speciesId, source = "starter") {
     acquiredAt: nowMs(),
     status: "idle",
   };
+  instance.currentHp = scaledPetStats(instance).hp;
+  return instance;
 }
 
 export function createInitialState(displayName = "Keeper") {
   const skills = Object.fromEntries(SKILLS.map((skill) => [skill.id, { level: 1, xp: 0 }]));
-  return {
-    schemaVersion: 1,
+  const state = {
+    schemaVersion: 2,
     gameVersion: GAME_VERSION,
     profile: {
       displayName: String(displayName || "Keeper").slice(0, 28),
@@ -62,11 +67,20 @@ export function createInitialState(displayName = "Keeper") {
       activeLimit: MAX_ACTIVE_PETS,
       denCapacity: 12,
       storageCapacity: 40,
+      currentHp: 100,
+      maxHp: 100,
     },
     skills,
     buildings: { den: 0, storage: 0, smokehouse: 0, kitchen: 0, workshop: 0, "training-yard": 0, watchtower: 0, "mess-hall": 0, "prismatic-beacon": 0 },
     inventory: {
       "camp-skewer": 18,
+      "field-ration": 10,
+      "pet-tonic": 2,
+      "keeper-tonic": 2,
+      "wooden-sword": 1,
+      "copper-axe": 1,
+      "cloth-tunic": 1,
+      "leather-boots": 1,
       "raw-meat": 4,
       "raw-fish": 4,
       herb: 8,
@@ -77,6 +91,8 @@ export function createInitialState(displayName = "Keeper") {
     },
     pets: [createPetInstance("ash-raccoon")],
     activities: [],
+    keeperActivity: null,
+    equipment: { weapon: "wooden-sword", tool: "copper-axe", body: "cloth-tunic", feet: "leather-boots" },
     remains: [],
     dungeonRuns: [],
     pendingEncounter: null,
@@ -84,8 +100,11 @@ export function createInitialState(displayName = "Keeper") {
     journal: [
       { id: randomId("log"), at: nowMs(), text: "The den is ready. Your Ash Raccoon is waiting for its first assignment." },
     ],
-    stats: { actions: 0, victories: 0, captures: 1, processed: 0, dungeonClears: 0, trades: 0 },
+    stats: { actions: 0, keeperActions: 0, victories: 0, captures: 1, processed: 0, dungeonClears: 0, trades: 0 },
   };
+  state.profile.maxHp = keeperStats(state).maxHp;
+  state.profile.currentHp = state.profile.maxHp;
+  return state;
 }
 
 export function normalizeState(raw, displayName = "Keeper") {
@@ -98,6 +117,7 @@ export function normalizeState(raw, displayName = "Keeper") {
     skills: { ...base.skills, ...(raw.skills || {}) },
     buildings: { ...base.buildings, ...(raw.buildings || {}) },
     inventory: { ...(raw.inventory || {}) },
+    equipment: { ...base.equipment, ...(raw.equipment || {}) },
     pets: Array.isArray(raw.pets) ? raw.pets : base.pets,
     activities: Array.isArray(raw.activities) ? raw.activities : [],
     remains: Array.isArray(raw.remains) ? raw.remains : [],
@@ -105,10 +125,24 @@ export function normalizeState(raw, displayName = "Keeper") {
     journal: Array.isArray(raw.journal) ? raw.journal.slice(-80) : base.journal,
     discoveries: Array.isArray(raw.discoveries) ? raw.discoveries : base.discoveries,
     stats: { ...base.stats, ...(raw.stats || {}) },
+    keeperActivity: raw.keeperActivity && typeof raw.keeperActivity === "object" ? raw.keeperActivity : null,
   };
   state.profile.denCapacity = 12 + Number(state.buildings.den || 0) * 5;
   state.profile.storageCapacity = 40 + Number(state.buildings.storage || 0) * 20;
   state.profile.activeLimit = MAX_ACTIVE_PETS;
+  state.profile.maxHp = keeperStats(state).maxHp;
+  state.profile.currentHp = clamp(Number(state.profile.currentHp ?? state.profile.maxHp), 0, state.profile.maxHp);
+  state.pets = state.pets.map((pet) => {
+    const maxHp = scaledPetStats(pet).hp;
+    return { ...pet, currentHp: clamp(Number(pet.currentHp ?? maxHp), 0, maxHp), status: pet.status || "idle" };
+  });
+  if (Number(raw.schemaVersion || 1) < 2) {
+    for (const itemId of ["wooden-sword", "copper-axe", "cloth-tunic", "leather-boots", "pet-tonic", "keeper-tonic"]) {
+      state.inventory[itemId] = Math.max(1, Number(state.inventory[itemId] || 0));
+    }
+    state.inventory["field-ration"] = Math.max(5, Number(state.inventory["field-ration"] || 0));
+  }
+  state.schemaVersion = 2;
   state.gameVersion = GAME_VERSION;
   return state;
 }
@@ -129,6 +163,17 @@ export function skillLevel(state, skillId) {
 
 export function activePetCount(state) {
   return state.pets.filter((entry) => entry.status && entry.status !== "idle" && !String(entry.status).startsWith("dungeon:")).length;
+}
+
+export function keeperStats(state) {
+  const equipment = Object.values(state.equipment || {}).map((id) => ITEMS[id]).filter(Boolean);
+  const totalLevels = ["melee", "ranged", "magic"].reduce((sum, id) => sum + skillLevel(state, id), 0);
+  return {
+    maxHp: 88 + Math.floor(totalLevels * 1.5) + equipment.reduce((sum, item) => sum + Number(item.hp || 0), 0),
+    attack: 10 + equipment.reduce((sum, item) => sum + Number(item.attack || 0), 0),
+    defense: 7 + equipment.reduce((sum, item) => sum + Number(item.defense || 0), 0),
+    speed: 16 + equipment.reduce((sum, item) => sum + Number(item.speed || 0), 0),
+  };
 }
 
 export function denCapacity(state) {
@@ -164,7 +209,7 @@ export function addItem(state, itemId, amount) {
   return true;
 }
 
-function grantSkillXp(state, skillId, amount) {
+export function grantSkillXp(state, skillId, amount) {
   const skill = state.skills[skillId] || { level: 1, xp: 0 };
   skill.xp += Math.max(0, Math.floor(amount));
   while (skill.level < 100) {
@@ -178,6 +223,7 @@ function grantSkillXp(state, skillId, amount) {
 }
 
 export function grantPetXp(state, pet, amount) {
+  const previousMaxHp = scaledPetStats(pet).hp;
   const trainingBoost = state.buildings?.["training-yard"] ? 1.05 : 1;
   const granted = Math.max(0, Math.floor(Number(amount || 0) * trainingBoost));
   pet.xp = Number(pet.xp || 0) + granted;
@@ -191,11 +237,21 @@ export function grantPetXp(state, pet, amount) {
     addJournal(state, `${SPECIES_BY_ID[pet.speciesId]?.name || "A pet"} reached level ${pet.level}.`);
   }
   if (pet.level >= cap) pet.xp = Math.min(pet.xp, xpForNextLevel(cap, "pet") - 1);
+  const nextMaxHp = scaledPetStats(pet).hp;
+  if (nextMaxHp > previousMaxHp && Number(pet.currentHp || 0) > 0) {
+    pet.currentHp = Math.min(nextMaxHp, Number(pet.currentHp || previousMaxHp) + nextMaxHp - previousMaxHp);
+  }
 }
 
 function requireIdlePet(state, petId) {
   const pet = getPet(state, petId);
   if (pet.status !== "idle") throw new GameError("That pet is already occupied.");
+  return pet;
+}
+
+function requireHealthyIdlePet(state, petId) {
+  const pet = requireIdlePet(state, petId);
+  if (Number(pet.currentHp || 0) <= 0) throw new GameError("That pet is downed. Heal it before assigning an action.");
   return pet;
 }
 
@@ -212,27 +268,19 @@ function consumeWorkingMeal(state, mealId) {
 }
 
 function validateLevelRequirements(state, pet, task) {
-  const species = SPECIES_BY_ID[pet.speciesId];
-  if (!Number(species?.aptitudes?.[task.skill] || 0)) throw new GameError(`${species?.name || "That pet"} does not have ${task.skill} aptitude.`);
   if (skillLevel(state, task.skill) < Number(task.level || 1)) throw new GameError(`${task.name} requires ${task.skill} level ${task.level}.`);
-  if (pet.level < Number(task.petLevel || task.level || 1)) throw new GameError(`${task.name} requires a pet at level ${task.petLevel || task.level}.`);
-}
-
-function actionDurationMs(task, mealId) {
-  const mealBonus = Number(ITEMS[mealId]?.workBonus || 0);
-  return Math.max(900, Number(task.duration || 5) * 1000 * (1 - mealBonus));
 }
 
 export function startActivity(rawState, { petId, activityId, mealId }, at = nowMs()) {
   const state = normalizeState(rawState);
   const task = ACTIVITY_BY_ID[activityId];
   if (!task) throw new GameError("Unknown activity.", "not-found");
-  const pet = requireIdlePet(state, petId);
+  const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   validateLevelRequirements(state, pet, task);
   const nutrition = consumeWorkingMeal(state, mealId);
   const id = randomId("work");
-  const durationMs = actionDurationMs(task, mealId);
+  const durationMs = petActionDuration(task, SPECIES_BY_ID[pet.speciesId], mealId);
   state.activities.push({ id, kind: "activity", taskId: activityId, petId, mealId, nutrition, startedAt: at, lastAt: at, durationMs, completedActions: 0, status: "running" });
   pet.status = `activity:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started ${task.name}.`, at);
@@ -243,13 +291,14 @@ export function startRecipe(rawState, { petId, recipeId, mealId }, at = nowMs())
   const state = normalizeState(rawState);
   const recipe = RECIPE_BY_ID[recipeId];
   if (!recipe) throw new GameError("Unknown recipe.", "not-found");
-  const pet = requireIdlePet(state, petId);
+  const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   validateLevelRequirements(state, pet, recipe);
   removeItems(state, recipe.ingredients);
   if (recipe.skill !== "cooking") consumeWorkingMeal(state, mealId);
   const id = randomId("recipe");
-  state.activities.push({ id, kind: "recipe", taskId: recipeId, petId, mealId, startedAt: at, endAt: at + actionDurationMs(recipe, mealId), status: "running" });
+  const durationMs = petActionDuration(recipe, SPECIES_BY_ID[pet.speciesId], mealId);
+  state.activities.push({ id, kind: "recipe", taskId: recipeId, petId, mealId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
   pet.status = `recipe:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started ${recipe.name}.`, at);
   return state;
@@ -266,19 +315,34 @@ export function buildingCosts(state, buildingId) {
   return scaledBuildingCosts(building, Number(state.buildings?.[buildingId] || 0));
 }
 
+export function constructionRequirement(state, buildingId) {
+  const building = BUILDING_BY_ID[buildingId];
+  if (!building) return Infinity;
+  const current = Number(state.buildings?.[buildingId] || 0);
+  return building.repeatable ? Math.min(100, Number(building.level || 1) + Math.floor(current / 2) * 2) : Number(building.level || 1);
+}
+
+function constructionXp(state, building) {
+  const currentLevel = skillLevel(state, "construction");
+  return Math.max(40, Math.round(Number(building.duration || 20) * 1.8), Math.ceil(xpForNextLevel(currentLevel, "skill") * 0.55));
+}
+
 export function startConstruction(rawState, { petId, buildingId, mealId }, at = nowMs()) {
   const state = normalizeState(rawState);
   const building = BUILDING_BY_ID[buildingId];
   if (!building) throw new GameError("Unknown structure.", "not-found");
   const current = Number(state.buildings?.[buildingId] || 0);
   if (current >= Number(building.maxLevel || 1)) throw new GameError("That structure is already complete.");
-  const pet = requireIdlePet(state, petId);
-  if (!Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes?.construction || 0)) throw new GameError(`${SPECIES_BY_ID[pet.speciesId].name} does not have construction aptitude.`);
+  const requiredLevel = constructionRequirement(state, buildingId);
+  if (skillLevel(state, "construction") < requiredLevel) throw new GameError(`${building.name} requires Construction level ${requiredLevel}.`);
+  const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   removeItems(state, scaledBuildingCosts(building, current));
   consumeWorkingMeal(state, mealId);
   const id = randomId("build");
-  state.activities.push({ id, kind: "construction", taskId: buildingId, petId, mealId, startedAt: at, endAt: at + actionDurationMs(building, mealId), status: "running" });
+  const task = { ...building, skill: "construction", level: requiredLevel };
+  const durationMs = petActionDuration(task, SPECIES_BY_ID[pet.speciesId], mealId);
+  state.activities.push({ id, kind: "construction", taskId: buildingId, petId, mealId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" });
   pet.status = `construction:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started building ${building.name}.`, at);
   return state;
@@ -286,8 +350,7 @@ export function startConstruction(rawState, { petId, buildingId, mealId }, at = 
 
 export function startProcessing(rawState, { petId, remainId, mealId }, at = nowMs()) {
   const state = normalizeState(rawState);
-  const pet = requireIdlePet(state, petId);
-  if (!Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes?.processing || 0)) throw new GameError(`${SPECIES_BY_ID[pet.speciesId].name} does not have processing aptitude.`);
+  const pet = requireHealthyIdlePet(state, petId);
   requireActiveSpace(state);
   const remains = state.remains.find((entry) => entry.id === remainId);
   if (!remains) throw new GameError("Those remains are no longer available.", "not-found");
@@ -295,7 +358,7 @@ export function startProcessing(rawState, { petId, remainId, mealId }, at = nowM
   state.remains = state.remains.filter((entry) => entry.id !== remainId);
   const id = randomId("process");
   const aptitude = Number(SPECIES_BY_ID[pet.speciesId]?.aptitudes.processing || 1);
-  const durationMs = Math.max(4000, 18000 - aptitude * 1800);
+  const durationMs = Math.max(4000, Math.round(30000 * Math.pow(10 / aptitude, 1.1)));
   state.activities.push({ id, kind: "processing", taskId: remains.speciesId, petId, mealId, startedAt: at, endAt: at + durationMs, status: "running" });
   pet.status = `processing:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started Processing ${SPECIES_BY_ID[remains.speciesId].name}.`, at);
@@ -304,7 +367,7 @@ export function startProcessing(rawState, { petId, remainId, mealId }, at = nowM
 
 function completeRepeatedActivity(state, assignment, pet, task, actions, random, events) {
   const species = SPECIES_BY_ID[pet.speciesId];
-  const aptitude = Number(species.aptitudes[task.skill] || 1);
+  const aptitude = petAptitude(species, task.skill);
   const structureBonus = task.skill === "mischief" && state.buildings.watchtower ? 0.08 : 0;
   for (let index = 0; index < actions; index += 1) {
     const burst = aptitudeYield(aptitude, random);
@@ -329,6 +392,145 @@ function completeRepeatedActivity(state, assignment, pet, task, actions, random,
   return actions;
 }
 
+function keeperToolSpeedBonus(state, skillId) {
+  const tool = ITEMS[state.equipment?.tool];
+  return tool?.skill === skillId ? Number(tool.speedBonus || 0) : 0;
+}
+
+function requireAvailableKeeper(state) {
+  if (state.keeperActivity) throw new GameError("Your Keeper is already completing an action.");
+  if (Number(state.profile.currentHp || 0) <= 0) throw new GameError("Your Keeper is downed. Use food or a Keeper Tonic before starting an action.");
+}
+
+function keeperOneTimeAssignment(kind, taskId, task, at, durationMs = Number(task.duration || 5) * 1000) {
+  return { id: randomId(`keeper-${kind}`), kind: `keeper-${kind}`, taskId, startedAt: at, endAt: at + durationMs, durationMs, status: "running" };
+}
+
+export function startKeeperActivity(rawState, { activityId }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  requireAvailableKeeper(state);
+  const task = ACTIVITY_BY_ID[activityId];
+  if (!task) throw new GameError("Unknown activity.", "not-found");
+  if (skillLevel(state, task.skill) < Number(task.level || 1)) throw new GameError(`${task.name} requires ${task.skill} level ${task.level}.`);
+  const toolBonus = keeperToolSpeedBonus(state, task.skill);
+  const durationMs = Math.max(1800, Math.round(Number(task.duration || 5) * 1000 * (1 - toolBonus)));
+  state.keeperActivity = { id: randomId("keeper-work"), kind: "keeper", taskId: task.id, startedAt: at, lastAt: at, durationMs, completedActions: 0, status: "running" };
+  addJournal(state, `You started ${task.name}.`, at);
+  return state;
+}
+
+export function startKeeperRecipe(rawState, { recipeId }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  requireAvailableKeeper(state);
+  const recipe = RECIPE_BY_ID[recipeId];
+  if (!recipe) throw new GameError("Unknown recipe.", "not-found");
+  if (skillLevel(state, recipe.skill) < Number(recipe.level || 1)) throw new GameError(`${recipe.name} requires ${recipe.skill} level ${recipe.level}.`);
+  removeItems(state, recipe.ingredients);
+  state.keeperActivity = keeperOneTimeAssignment("recipe", recipe.id, recipe, at);
+  addJournal(state, `You started ${recipe.name}.`, at);
+  return state;
+}
+
+export function startKeeperConstruction(rawState, { buildingId }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  requireAvailableKeeper(state);
+  const building = BUILDING_BY_ID[buildingId];
+  if (!building) throw new GameError("Unknown structure.", "not-found");
+  const current = Number(state.buildings?.[buildingId] || 0);
+  if (current >= Number(building.maxLevel || 1)) throw new GameError("That structure is already complete.");
+  const requiredLevel = constructionRequirement(state, buildingId);
+  if (skillLevel(state, "construction") < requiredLevel) throw new GameError(`${building.name} requires Construction level ${requiredLevel}.`);
+  removeItems(state, scaledBuildingCosts(building, current));
+  state.keeperActivity = keeperOneTimeAssignment("construction", building.id, building, at);
+  addJournal(state, `You started building ${building.name}.`, at);
+  return state;
+}
+
+export function startKeeperProcessing(rawState, { remainId }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  requireAvailableKeeper(state);
+  const remains = state.remains.find((entry) => entry.id === remainId);
+  if (!remains) throw new GameError("Those remains are no longer available.", "not-found");
+  state.remains = state.remains.filter((entry) => entry.id !== remainId);
+  const task = { duration: 30 };
+  state.keeperActivity = keeperOneTimeAssignment("processing", remains.speciesId, task, at);
+  addJournal(state, `You started Processing ${SPECIES_BY_ID[remains.speciesId].name}.`, at);
+  return state;
+}
+
+export function stopKeeperActivity(rawState, at = nowMs()) {
+  const { state } = settleState(rawState, at);
+  if (!state.keeperActivity) return state;
+  addJournal(state, "You stopped your personal assignment.", at);
+  state.keeperActivity = null;
+  return state;
+}
+
+function settleKeeperActivity(state, at, random, events) {
+  const assignment = state.keeperActivity;
+  if (!assignment) return;
+  if (assignment.kind === "keeper") {
+    const task = ACTIVITY_BY_ID[assignment.taskId];
+    if (!task) { state.keeperActivity = null; return; }
+    const lowerBound = at - OFFLINE_CAP_MS;
+    assignment.lastAt = Math.max(Number(assignment.lastAt || lowerBound), lowerBound);
+    const due = Math.max(0, Math.floor((at - assignment.lastAt) / Math.max(1, assignment.durationMs)));
+    for (let index = 0; index < due; index += 1) {
+      let full = false;
+      for (const [itemId, amount] of Object.entries(task.rewards || {})) {
+        if (!addItem(state, itemId, Number(amount))) { full = true; break; }
+      }
+      if (full) {
+        events.push({ type: "stopped", text: `${task.name} stopped because storage is full.` });
+        state.keeperActivity = null;
+        return;
+      }
+      state.profile.coins += Number(task.coins || 0);
+      grantSkillXp(state, task.skill, task.xp);
+      assignment.completedActions = Number(assignment.completedActions || 0) + 1;
+      assignment.lastAt += assignment.durationMs;
+      state.stats.actions += 1;
+      state.stats.keeperActions += 1;
+    }
+    if (due) events.push({ type: "keeper", text: `You completed ${due} ${task.name} action${due === 1 ? "" : "s"}.` });
+    return;
+  }
+
+  if (Number(assignment.endAt || 0) > at) return;
+  if (assignment.kind === "keeper-recipe") {
+    const recipe = RECIPE_BY_ID[assignment.taskId];
+    if (recipe) {
+      for (const [itemId, amount] of Object.entries(recipe.output || {})) addItem(state, itemId, Number(amount));
+      grantSkillXp(state, recipe.skill, recipe.xp);
+      events.push({ type: "keeper", text: `You completed ${recipe.name}.` });
+    }
+  } else if (assignment.kind === "keeper-construction") {
+    const building = BUILDING_BY_ID[assignment.taskId];
+    if (building) {
+      state.buildings[building.id] = Number(state.buildings[building.id] || 0) + 1;
+      state.profile.denCapacity = denCapacity(state);
+      state.profile.storageCapacity = storageCapacity(state);
+      grantSkillXp(state, "construction", constructionXp(state, building));
+      events.push({ type: "keeper", text: `You completed ${building.name}.` });
+    }
+  } else if (assignment.kind === "keeper-processing") {
+    const target = SPECIES_BY_ID[assignment.taskId];
+    if (target) {
+      const facilityScale = state.buildings.smokehouse ? 1.1 : 1;
+      for (const [itemId, amount] of Object.entries(target.materials || {})) addItem(state, itemId, Math.max(1, Math.floor(Number(amount) * facilityScale)));
+      grantSkillXp(state, "processing", 22 + (REGIONS_INDEX[target.region] || 0) * 28);
+      state.stats.processed += 1;
+      events.push({ type: "keeper", text: `You finished Processing ${target.name}.` });
+    }
+  } else {
+    state.keeperActivity = null;
+    return;
+  }
+  state.stats.actions += 1;
+  state.stats.keeperActions += 1;
+  state.keeperActivity = null;
+}
+
 function finishAssignment(state, assignment, pet, random, events) {
   if (assignment.kind === "recipe") {
     const recipe = RECIPE_BY_ID[assignment.taskId];
@@ -346,7 +548,7 @@ function finishAssignment(state, assignment, pet, random, events) {
     state.buildings[building.id] = Number(state.buildings[building.id] || 0) + 1;
     state.profile.denCapacity = denCapacity(state);
     state.profile.storageCapacity = storageCapacity(state);
-    const xp = Math.max(40, Math.round(building.duration * 1.8));
+    const xp = constructionXp(state, building);
     grantSkillXp(state, "construction", xp);
     grantSkillXp(state, "petMastery", Math.floor(xp * 0.22));
     grantPetXp(state, pet, Math.floor(xp * 0.72));
@@ -380,6 +582,7 @@ export function combatRequirement(speciesOrId) {
 export function settleState(rawState, at = nowMs(), random = Math.random) {
   const state = normalizeState(rawState);
   const events = [];
+  settleKeeperActivity(state, at, random, events);
   const retained = [];
   const lowerBound = at - OFFLINE_CAP_MS;
   for (const assignment of state.activities) {
@@ -439,7 +642,21 @@ export function stopActivity(rawState, activityId, at = nowMs()) {
 function combatantFromPet(pet) {
   const species = SPECIES_BY_ID[pet.speciesId];
   const stats = scaledPetStats(pet);
-  return { id: pet.id, name: pet.customName || species.name, speciesId: pet.speciesId, affinity: species.affinity, ability: species.ability, maxHp: stats.hp, hp: stats.hp, attack: stats.attack, defense: stats.defense, speed: stats.speed, charge: 0, attacks: 0, alive: true, level: Number(pet.level || 1) };
+  const hp = clamp(Number(pet.currentHp ?? stats.hp), 0, stats.hp);
+  return { id: pet.id, name: pet.customName || species.name, speciesId: pet.speciesId, affinity: species.affinity, ability: species.ability, maxHp: stats.hp, hp, initialHp: hp, attack: stats.attack, defense: stats.defense, speed: stats.speed, charge: 0, attacks: 0, alive: hp > 0, level: Number(pet.level || 1), kind: "pet" };
+}
+
+function combatantFromKeeper(state, combatStyle) {
+  const weapon = ITEMS[state.equipment?.weapon];
+  if (!weapon || weapon.category !== "weapon") throw new GameError("Equip a weapon before entering combat.");
+  if (weapon.style !== combatStyle) throw new GameError(`Equip a ${combatStyle} weapon to use that combat style.`);
+  if (skillLevel(state, combatStyle) < Number(weapon.level || 1)) throw new GameError(`${weapon.name} requires ${combatStyle} level ${weapon.level}.`);
+  const stats = keeperStats(state);
+  const level = skillLevel(state, combatStyle);
+  const maxHp = stats.maxHp;
+  const hp = clamp(Number(state.profile.currentHp ?? maxHp), 0, maxHp);
+  const styleScale = 1 + (level - 1) * 0.035;
+  return { id: "keeper", name: state.profile.displayName, speciesId: null, affinity: combatStyle === "magic" ? "Radiant" : combatStyle === "ranged" ? "Gale" : "Stone", ability: { name: combatStyle === "magic" ? "Focus Burst" : combatStyle === "ranged" ? "Quick Volley" : "Heavy Strike", power: 1.65, cooldown: 4 }, maxHp, hp, initialHp: hp, attack: Math.round(stats.attack * styleScale), defense: stats.defense, speed: stats.speed + Math.floor(level / 5), charge: 0, attacks: 0, alive: hp > 0, level, kind: "keeper", combatStyle };
 }
 
 function enemyCombatant(speciesId) {
@@ -449,7 +666,8 @@ function enemyCombatant(speciesId) {
   const level = 6 + band * 20;
   const stats = scaledPetStats({ speciesId, level, stars: Math.min(5, band + 1) });
   const bossScale = species.acquisition === "Area Boss" ? 1.35 : species.acquisition === "Dungeon" ? 1.65 : 1;
-  return { id: `enemy-${speciesId}`, name: species.name, speciesId, affinity: species.affinity, ability: species.ability, maxHp: Math.round(stats.hp * bossScale), hp: Math.round(stats.hp * bossScale), attack: Math.round(stats.attack * bossScale), defense: Math.round(stats.defense * bossScale), speed: stats.speed, charge: 0, attacks: 0, alive: true, level };
+  const maxHp = Math.round(stats.hp * bossScale);
+  return { id: `enemy-${speciesId}`, name: species.name, speciesId, affinity: species.affinity, ability: species.ability, maxHp, hp: maxHp, initialHp: maxHp, attack: Math.round(stats.attack * bossScale), defense: Math.round(stats.defense * bossScale), speed: stats.speed, charge: 0, attacks: 0, alive: true, level };
 }
 
 function attackInterval(speed) {
@@ -464,23 +682,26 @@ function damageRoll(attacker, defender, abilityPower, random) {
   return { amount: Math.max(1, Math.round(raw - defender.defense * 0.42)), critical, affinity };
 }
 
-export function resolveCombat(rawState, { petIds, speciesId, mealId }, random = Math.random, at = nowMs()) {
+export function resolveCombat(rawState, { petIds, speciesId, mealId, includeKeeper = true, combatStyle = "melee" }, random = Math.random, at = nowMs()) {
   const state = normalizeState(rawState);
   if (state.pendingEncounter) throw new GameError("Resolve the current capture opportunity first.");
   const ids = [...new Set(Array.isArray(petIds) ? petIds : [])];
-  if (!ids.length) throw new GameError("Choose at least one combat pet.");
+  if (!ids.length && !includeKeeper) throw new GameError("Choose the Keeper, at least one combat pet, or both.");
   if (ids.length > MAX_COMBAT_PETS) throw new GameError(`Combat parties can contain at most ${MAX_COMBAT_PETS} pets.`);
   requireActiveSpace(state, ids.length);
-  const pets = ids.map((id) => requireIdlePet(state, id));
+  const pets = ids.map((id) => requireHealthyIdlePet(state, id));
   const enemySpecies = SPECIES_BY_ID[speciesId];
   if (!enemySpecies) throw new GameError("Unknown opponent.", "not-found");
   if (enemySpecies.acquisition === "Dungeon") throw new GameError(`${enemySpecies.name} can only be encountered in a dungeon.`);
+  if (includeKeeper && state.keeperActivity) throw new GameError("Stop your Keeper's current action before entering combat.");
   const requiredCombat = combatRequirement(enemySpecies);
   if (skillLevel(state, "combat") < requiredCombat) throw new GameError(`${enemySpecies.name} requires Combat level ${requiredCombat}.`);
+  const keeperCombatant = includeKeeper ? combatantFromKeeper(state, combatStyle) : null;
   if (!ITEMS[mealId] || ITEMS[mealId].category !== "meal") throw new GameError("Choose a combat meal.");
   if (Number(state.inventory[mealId] || 0) < 1) throw new GameError(`You do not have any ${ITEMS[mealId].name}.`);
 
-  const team = pets.map(combatantFromPet);
+  const team = [...(keeperCombatant ? [keeperCombatant] : []), ...pets.map(combatantFromPet)];
+  if (!team.some((entry) => entry.alive)) throw new GameError("Your chosen combatants are downed. Heal them before combat.");
   const enemy = enemyCombatant(speciesId);
   const events = [{ time: 0, type: "start", enemy: { name: enemy.name, hp: enemy.hp }, team: team.map((pet) => ({ id: pet.id, name: pet.name, hp: pet.hp })) }];
   let time = 0;
@@ -528,10 +749,18 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId }, random = 
   }
 
   const victory = !enemy.alive;
+  for (const fighter of team) {
+    if (fighter.kind === "keeper") state.profile.currentHp = fighter.hp;
+    else {
+      const instance = state.pets.find((entry) => entry.id === fighter.id);
+      if (instance) instance.currentHp = fighter.hp;
+    }
+  }
   if (victory) {
     const band = REGIONS_INDEX[enemySpecies.region] || 0;
     const xp = 24 + band * 42 + (enemySpecies.acquisition === "Area Boss" ? 80 : 0);
     grantSkillXp(state, "combat", xp);
+    if (includeKeeper) grantSkillXp(state, combatStyle, xp);
     grantSkillXp(state, "petMastery", Math.floor(xp * 0.2));
     for (const pet of pets) grantPetXp(state, pet, Math.floor(xp * 0.9));
     state.pendingEncounter = { speciesId, createdAt: at, source: "combat" };
@@ -539,10 +768,10 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId }, random = 
     if (!state.discoveries.includes(speciesId)) state.discoveries.push(speciesId);
     addJournal(state, `${enemySpecies.name} was defeated. Choose whether to capture or Process it.`, at);
   } else {
-    addJournal(state, `The party withdrew from ${enemySpecies.name}. No pets were lost.`, at);
+    addJournal(state, `The party withdrew from ${enemySpecies.name}. Downed combatants need food or tonics before returning.`, at);
   }
   events.push({ time: time + 80, type: "end", victory, enemyHp: enemy.hp, team: team.map((entry) => ({ id: entry.id, hp: entry.hp, maxHp: entry.maxHp })) });
-  return { state, battle: { victory, duration: time, events, enemy: { id: enemy.id, speciesId, name: enemy.name, affinity: enemy.affinity, level: enemy.level, ability: enemy.ability.name, maxHp: enemy.maxHp, attackInterval: attackInterval(enemy.speed) }, team: team.map((entry) => ({ id: entry.id, name: entry.name, speciesId: entry.speciesId, level: entry.level, ability: entry.ability.name, maxHp: entry.maxHp, attackInterval: attackInterval(entry.speed) })) } };
+  return { state, battle: { victory, duration: time, events, enemy: { id: enemy.id, speciesId, name: enemy.name, affinity: enemy.affinity, level: enemy.level, ability: enemy.ability.name, maxHp: enemy.maxHp, startingHp: enemy.initialHp, attackInterval: attackInterval(enemy.speed), kind: "enemy" }, team: team.map((entry) => ({ id: entry.id, name: entry.name, speciesId: entry.speciesId, level: entry.level, ability: entry.ability.name, maxHp: entry.maxHp, startingHp: entry.initialHp, attackInterval: attackInterval(entry.speed), kind: entry.kind, combatStyle: entry.combatStyle })) } };
 }
 
 function addRemains(state, speciesId, source = "combat") {
@@ -608,14 +837,68 @@ export function condensePets(rawState, { primaryId, duplicateId }, at = nowMs())
   const duplicate = requireIdlePet(state, duplicateId);
   if (primary.speciesId !== duplicate.speciesId) throw new GameError("Condensing requires two pets of the same species.");
   if (primary.stars !== duplicate.stars) throw new GameError("Both pets must have the same star rank.");
-  if (primary.stars >= 5) throw new GameError("This pet is already 5★.");
+  if (primary.stars >= 5) throw new GameError("This pet is already five stars.");
   const cap = levelCapForStars(primary.stars);
   if (primary.level < cap || duplicate.level < cap) throw new GameError(`Both pets must reach level ${cap} before Condensing.`);
   primary.stars += 1;
+  primary.level = 1;
   primary.xp = 0;
+  primary.currentHp = scaledPetStats(primary).hp;
   state.pets = state.pets.filter((entry) => entry.id !== duplicateId);
-  addJournal(state, `Two ${SPECIES_BY_ID[primary.speciesId].name} pets condensed into a ${primary.stars}★ pet.`, at);
+  addJournal(state, `Two ${SPECIES_BY_ID[primary.speciesId].name} pets condensed into a ${primary.stars}-star pet.`, at);
   return state;
+}
+
+export function equipItem(rawState, itemId, at = nowMs()) {
+  const state = normalizeState(rawState);
+  const item = ITEMS[itemId];
+  if (!item?.slot) throw new GameError("That item cannot be equipped.");
+  if (Number(state.inventory[itemId] || 0) < 1) throw new GameError("You do not own that item.");
+  const requiredSkill = item.style || item.skill;
+  if (requiredSkill && skillLevel(state, requiredSkill) < Number(item.level || 1)) throw new GameError(`${item.name} requires ${SKILLS.find((entry) => entry.id === requiredSkill)?.name || requiredSkill} level ${item.level}.`);
+  if (!requiredSkill && Number(item.level || 1) > Math.max(skillLevel(state, "melee"), skillLevel(state, "ranged"), skillLevel(state, "magic"))) throw new GameError(`${item.name} requires a combat discipline at level ${item.level}.`);
+  state.equipment[item.slot] = itemId;
+  state.profile.maxHp = keeperStats(state).maxHp;
+  state.profile.currentHp = Math.min(state.profile.maxHp, Number(state.profile.currentHp || 0));
+  addJournal(state, `${item.name} equipped.`, at);
+  return state;
+}
+
+export function buyStoreItem(rawState, { itemId, quantity = 1 }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  const listing = STORE_ITEMS.find((entry) => entry.itemId === itemId);
+  if (!listing) throw new GameError("That item is not sold here.");
+  const amount = clamp(Math.floor(Number(quantity || 1)), 1, 100);
+  const price = Number(listing.price) * amount;
+  if (state.profile.coins < price) throw new GameError("You do not have enough coins.");
+  if (!addItem(state, itemId, amount)) throw new GameError("Storage is full.");
+  state.profile.coins -= price;
+  addJournal(state, `Purchased ${amount} ${ITEMS[itemId].name}${amount === 1 ? "" : "s"} for ${price} coins.`, at);
+  return state;
+}
+
+export function useHealingItem(rawState, { itemId, targetType = "keeper", petId = "" }, at = nowMs()) {
+  const state = normalizeState(rawState);
+  const item = ITEMS[itemId];
+  if (!item || !Number(item.heal || 0) || !["meal", "medicine"].includes(item.category)) throw new GameError("That item cannot heal combat injuries.");
+  removeItems(state, { [itemId]: 1 });
+  let healed = 0;
+  if (targetType === "keeper") {
+    const maxHp = keeperStats(state).maxHp;
+    const before = Number(state.profile.currentHp || 0);
+    state.profile.currentHp = Math.min(maxHp, before + Number(item.heal));
+    healed = state.profile.currentHp - before;
+  } else {
+    const pet = getPet(state, petId);
+    if (pet.status !== "idle") throw new GameError("That pet must be idle before healing.");
+    const maxHp = scaledPetStats(pet).hp;
+    const before = Number(pet.currentHp || 0);
+    pet.currentHp = Math.min(maxHp, before + Number(item.heal));
+    healed = pet.currentHp - before;
+  }
+  if (healed <= 0) throw new GameError("That target is already at full health.");
+  addJournal(state, `${ITEMS[itemId].name} restored ${healed} health.`, at);
+  return { state, healed };
 }
 
 export function dungeonChance(state, dungeonId, petIds) {
@@ -637,7 +920,10 @@ export function startDungeon(rawState, { dungeonId, petIds }, at = nowMs()) {
   if (skillLevel(state, "combat") < dungeon.level) throw new GameError(`${dungeon.name} requires Combat level ${dungeon.level}.`);
   const ids = [...new Set(Array.isArray(petIds) ? petIds : [])];
   if (!ids.length || ids.length > MAX_COMBAT_PETS) throw new GameError("Choose one to three dungeon pets.");
-  ids.forEach((id) => requireIdlePet(state, id));
+  ids.forEach((id) => {
+    const pet = requireIdlePet(state, id);
+    if (Number(pet.currentHp || 0) <= 0) throw new GameError("Downed pets must be healed before entering a dungeon.");
+  });
   removeItems(state, dungeon.entry);
   const odds = dungeonChance(state, dungeonId, ids);
   const id = randomId("dungeon");

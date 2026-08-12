@@ -1,88 +1,61 @@
 # Locked gameplay rules
 
-## Pet progression
+## Keeper progression
 
-- Every pet can participate in combat.
-- Species differ through base stats, affinity, one signature ability, one passive, and work aptitudes.
-- Captured pets begin at 1★ and level 1.
-- Level caps are 20, 40, 60, 80, and 100 for 1★ through 5★.
-- Both same-species pets must have the same star rank and reach that rank's level cap before they can Condense.
-- Condensing consumes one pet, increases the survivor by one star, preserves its current level, and opens the next level band.
-- Sacrificing transfers a small species value plus 30% of earned lifetime XP, reduced sharply by the donor/recipient level gap.
+- The Keeper is a playable character, not only a manager. One personal timer can gather, fish, perform Mischief, cook, craft, Process, or construct while up to six pets work independently.
+- The Keeper can enter live combat alone or alongside up to three pets.
+- All 14 skills have levels and XP: Woodcutting, Mining, Foraging, Fishing, Processing, Cooking, Crafting, Mischief, Construction, Combat, Melee, Ranged, Magic, and Pet Mastery.
+- The equipped weapon chooses the Keeper's combat discipline. Combat wins train Combat plus Melee, Ranged, or Magic.
+- Equipment and all owned stacks live in the dedicated Equipment and Inventory & Storage screens.
+- The General Store sells recovery food, pet and Keeper tonics, the four starter tools, three starter weapons, and basic armour. Level-20 combat gear is crafted.
 
-## Aptitude output
+## Pet progression and aptitude
 
-Each activity gives one guaranteed base output. A 25% burst roll changes that output to the assigned pet's aptitude rating:
+- Every pet can fight and attempt every pet action.
+- Species differ through base stats, affinity, one signature ability, one passive, and 1–10 work aptitudes. An unlisted aptitude is 1.
+- Aptitude never locks a pet out. It controls the action timer and potential yield. Every action guarantees one base batch; a 25% burst produces batches equal to the aptitude, so aptitude 2 has a 25% chance at two while aptitude 1 always gets one. A poor specialist can attempt a high-tier action very slowly; an aptitude-10 specialist works close to the listed base timer.
+- The account skill level unlocks an action. Pet level does not gate work.
+- Every completed pet action grants pet XP, including gathering, recipes, Processing, Construction, combat, and dungeons.
+- Pet levels improve combat health, attack, and defence. Captured pets begin at one star and level 1.
+- Level caps are 20, 40, 60, 80, and 100 for one through five stars.
+- Condensing requires two idle, identical, same-star pets at that star's maximum level. It consumes the duplicate, adds one star, resets the survivor to level 1 and zero current XP, restores it to full health, and opens the next level ceiling.
+- Each star above the first gives an exact 10% multiplicative base-combat-stat bonus, so a level-1 two-star pet is 10% stronger than a level-1 one-star pet.
+- Sacrificing transfers a species value plus part of earned lifetime XP. The level-gap curve makes cheap common sacrifices extremely inefficient for advanced recipients.
 
-| Aptitude | 75% result | 25% result | Average |
-| ---: | ---: | ---: | ---: |
-| 1 | 1 | 1 | 1.00 |
-| 2 | 1 | 2 | 1.25 |
-| 3 | 1 | 3 | 1.50 |
-| 4 | 1 | 4 | 1.75 |
-| 5 | 1 | 5 | 2.00 |
+## Food and idle timers
 
-Player skill level and pet level both gate high-level actions. For example, the Magic Tree requires Woodcutting 80 and a level-80 pet, which requires at least 4★.
+- Each repeating pet assignment consumes one prepared meal when it starts. Nutrition determines how many cycles that meal fuels before another copy is consumed automatically.
+- Cooking is the recovery-safe exception: its recipe ingredients feed the Cooking pet, so no separate prepared meal is required.
+- Up to six pets can run ordinary actions simultaneously. The Keeper's personal timer is separate.
+- Pets and the Keeper never die from hunger. A pet action stops safely when the chosen meal is unavailable.
+- Better meals provide more nutrition, combat healing, capture chance, and work bonuses.
+- Offline repeating work settles for up to eight hours. Smooth countdowns and progress bars update locally without extra Firestore writes.
 
-Every running assignment exposes its current cycle countdown, progress bar, completed-action total, skill XP, and level milestones. These visual timers update locally and do not create extra Firestore writes.
+## Combat, injury, and capture
 
-## Food
+- Combat is continuous rather than turn-based. Every fighter attacks when an independent, speed-based meter fills.
+- The battle screen stays visible for the fight with attack countdowns, health bars, hit splats, ability notices, meal-heal feedback, and a rolling log. Creature artwork stays still.
+- Up to three pets may join the Keeper. Pet fighters occupy ordinary active slots during combat; the Keeper must stop a personal assignment before fighting.
+- Affinity advantage modifies damage by 20%; disadvantage reduces it. Signature abilities fire automatically on cooldown.
+- Combat health persists afterward. Zero health means downed, never deleted: downed pets cannot work, fight, or enter dungeons until healed. Food or Pet Tonics heal pets; food or Keeper Tonics heal the Keeper.
+- Combat meals heal injured fighters automatically when they fall below the threshold.
+- Defeating a wild pet creates no automatic loot. Victory creates exactly one capture-or-Processing decision.
+- A failed capture consumes its cooked meal and sends the defeated pet to Processing. Capturing requires open den space.
+- Common, Uncommon, Rare, and Area Boss hunts have increasing Combat gates. Dungeon-only species cannot be directly hunted.
 
-- Every ordinary active assignment consumes food.
-- Cooking is the recovery-safe exception: recipe ingredients feed the Cooking pet, so no separate prepared meal is required. Cooking recipes produce multi-meal batches.
-- Up to six pets can work at once, providing more throughput and XP while consuming food six times as quickly.
-- Pets never die or lose levels when food runs out; the assignment stops safely.
-- Better meals provide more working nutrition, stronger healing, improved capture chance, and work bonuses.
-- Cooked food is also the only capture consumable.
+## Processing, Construction, and dungeons
 
-## Combat and capture
-
-- Up to three pets fight at once, consuming normal active slots during a live fight.
-- Combat is continuous rather than turn-based. Every combatant attacks when its independent speed-based meter fills.
-- The battle screen remains visible for the entire fight, with attack countdowns, health bars, hit splats, ability notices, healing feedback, and a rolling combat log.
-- Pet artwork remains still during combat; timing and hit feedback provide the motion rather than attack animations.
-- Signature abilities fire on their own cooldowns.
-- Affinity advantage modifies damage by 20%; disadvantage reduces it.
-- Selected combat food automatically heals injured pets.
-- Defeating a wild pet produces no automatic loot.
-- Commons unlock at each region threshold; Uncommon, Rare, and Area Boss hunts unlock later in that region. Dungeon species cannot be selected as ordinary hunts.
-- After victory, the keeper may offer one cooked meal for a capture roll or send the pet to Processing.
-- A failed capture consumes the meal and sends the pet to Processing.
-- Capturing requires an open den space.
-
-## Processing
-
-- Processing requires an assigned pet and consumes one ordinary active slot.
-- Species have distinct meat and material tables.
-- Processing aptitude controls burst output.
-- The Smokehouse permanently improves output.
-
-## Construction
-
-- Den expansions increase pet capacity.
-- Storage expansions increase item-stack capacity.
-- One-time facilities provide small permanent boosts to Processing, Cooking, Crafting, XP, Mischief, and food efficiency.
-- Construction requires materials, food, time, and an assigned pet.
-
-## Dungeons
-
-- Dungeons are asynchronous probability expeditions, not live combat.
-- A party contains up to three pets.
-- Dungeon pets do not consume the six ordinary active slots, but cannot do another task simultaneously.
-- Combined pet power determines base success chance.
-- Each favored-affinity pet adds a meaningful bonus.
-- Overwhelming the recommended power can reach 100% success.
-- Failure returns partial rewards; pets never die.
-- Successful runs can reveal rare capture encounters.
-- Rare dungeon materials form an expedition chain: Root Cellar materials unlock Foundry Keys, Glass Labyrinth materials unlock Storm Seals, and Tempest materials unlock the Starfall Vault.
-- The final Prismatic Beacon permanently adds four percentage points to dungeon success chance.
+- Processing may be completed personally or by one assigned pet. Species have distinct meat and material tables; pet Processing aptitude changes timer and burst yield.
+- Den expansions add pet capacity, Storage expansions add stack capacity, and one-time buildings add small permanent bonuses.
+- Construction requires account Construction level, materials, and time. A pet assignment also consumes food; personal construction does not.
+- Dungeons are asynchronous probability expeditions, not live combat, and do not consume ordinary active slots.
+- One to three healthy pets enter. Combined pet power sets base success chance and favored affinity adds a bonus. Failure returns partial rewards and never deletes pets.
+- Dungeon materials form a chain from Root Cellar to Foundry Keys, Storm Seals, Starfall Vault, and the final Prismatic Beacon.
 
 ## Marketplace
 
-- Pets may be traded an unlimited number of times.
-- Every pet retains a unique instance ID and trade counter.
-- Sellers pay a 2% listing fee, minimum five coins.
-- Listing, buying, cancellation, currency transfer, and ownership transfer use Firestore transactions.
-- A sold listing delivers its coins as soon as the seller is online; an offline seller receives them on the next sign-in.
-- There are no account-bound or story-bound pets.
-- A keeper must retain one pet before listing another, preventing an accidentally unplayable empty den without binding any particular pet.
+- Pets may be traded any number of times. There are no account-bound or story-bound pets.
+- Sellers pay a 2% listing fee with a five-coin minimum.
+- Each pet keeps its unique instance ID, health, levels, stars, lifetime XP, and trade count.
+- Firestore transactions protect normal listing, purchase, cancellation, payment, and ownership transfers.
+- A Keeper must retain one pet before listing another, preventing an accidentally empty den without binding any particular pet.

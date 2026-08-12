@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 — Playable Keeper and full progression rebuild
+
+- Made the Keeper a playable worker across gathering, Mischief, Cooking, Crafting, Processing, and Construction with one independent idle timer alongside six pet assignments.
+- Added Keeper-only and mixed-party live combat plus Melee, Ranged, and Magic skills.
+- Added persistent Keeper and pet health, downed-state restrictions, combat injury persistence, meals, Pet Tonics, and Keeper Tonics.
+- Added a dedicated Equipment screen and full category-filtered Inventory & Storage screen.
+- Added a dedicated Skills screen with all 14 level bars, milestone markers, and XP totals.
+- Added the General Store with starter food, medicine, tools, three combat styles, and basic armour.
+- Added craftable level-20 Melee, Ranged, Magic, and body equipment.
+- Reworked aptitudes to 1–10 speed-and-yield ratings. Any pet can attempt any unlocked task, including high-tier work; pet level no longer blocks work.
+- Made every pet action grant pet XP and restored the health gained when a living pet levels.
+- Rebuilt Condensing to require two identical max-level same-star pets, then reset the survivor to level 1 at the next star and grant an exact 10% base-stat bonus per added star.
+- Added automatic schema-v2 migration for existing saves without losing pets, items, coins, buildings, or skill progress.
+- Expanded automated coverage to 29 gameplay, security, migration, timer, combat, store, equipment, and art tests.
+
 ## 0.5.0 — Complete launch bestiary
 
 - Added unique production artwork for all 50 launch species across Greenhollow, Copperwood, Sunscar Basin, Stormreach, and Starfall Expanse.

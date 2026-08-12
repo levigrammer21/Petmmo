@@ -1,5 +1,5 @@
 export const GAME_NAME = "Pet Idle MMO";
-export const GAME_VERSION = "0.5.0";
+export const GAME_VERSION = "0.6.0";
 export const MAX_ACTIVE_PETS = 6;
 export const MAX_COMBAT_PETS = 3;
 export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
@@ -47,6 +47,9 @@ export const SKILLS = [
   { id: "mischief", name: "Mischief", description: "Pilfer ingredients, coins, maps, and rare components." },
   { id: "construction", name: "Construction", description: "Expand the den, storage, and permanent facilities." },
   { id: "combat", name: "Combat", description: "Defeat wild pets, bosses, and dungeon threats." },
+  { id: "melee", name: "Melee", description: "Keeper accuracy and damage with close-range weapons." },
+  { id: "ranged", name: "Ranged", description: "Keeper accuracy and damage with bows and thrown weapons." },
+  { id: "magic", name: "Magic", description: "Keeper accuracy and damage with spell focuses." },
   { id: "petMastery", name: "Pet Mastery", description: "General experience earned by managing working pets." },
 ];
 
@@ -56,7 +59,7 @@ const pet = (id, name, region, affinity, acquisition, aptitudes, stats, ability,
   region,
   affinity,
   acquisition,
-  aptitudes,
+  aptitudes: Object.fromEntries(Object.entries(aptitudes).map(([skill, rating]) => [skill, Math.min(10, Number(rating) * 2)])),
   stats: { hp: stats[0], attack: stats[1], defense: stats[2], speed: stats[3] },
   ability: { name: ability[0], power: ability[1], cooldown: ability[2] },
   passive: { name: passive[0], description: passive[1] },
@@ -184,60 +187,102 @@ export const ITEMS = {
   "trail-pack": { name: "Trail Pack", category: "supply" },
   "foundry-key": { name: "Foundry Key", category: "supply" },
   "storm-seal": { name: "Storm Seal", category: "supply" },
+  "field-ration": { name: "Field Ration", category: "meal", nutrition: 4, heal: 12, captureBonus: 0.01, workBonus: 0 },
+  "pet-tonic": { name: "Pet Tonic", category: "medicine", heal: 45 },
+  "keeper-tonic": { name: "Keeper Tonic", category: "medicine", heal: 45 },
+  "copper-axe": { name: "Copper Axe", category: "tool", slot: "tool", skill: "woodcutting", level: 1, speedBonus: 0.08 },
+  "copper-pickaxe": { name: "Copper Pickaxe", category: "tool", slot: "tool", skill: "mining", level: 1, speedBonus: 0.08 },
+  "reed-rod": { name: "Reed Fishing Rod", category: "tool", slot: "tool", skill: "fishing", level: 1, speedBonus: 0.08 },
+  "forager-knife": { name: "Forager Knife", category: "tool", slot: "tool", skill: "foraging", level: 1, speedBonus: 0.08 },
+  "wooden-sword": { name: "Wooden Sword", category: "weapon", slot: "weapon", style: "melee", level: 1, attack: 5, speed: 15 },
+  "shortbow": { name: "Shortbow", category: "weapon", slot: "weapon", style: "ranged", level: 1, attack: 4, speed: 18 },
+  "oak-wand": { name: "Oak Wand", category: "weapon", slot: "weapon", style: "magic", level: 1, attack: 6, speed: 12 },
+  "cloth-tunic": { name: "Cloth Tunic", category: "armor", slot: "body", level: 1, defense: 4, hp: 12 },
+  "leather-boots": { name: "Leather Boots", category: "armor", slot: "feet", level: 1, defense: 2, speed: 4 },
+  "iron-sword": { name: "Iron Sword", category: "weapon", slot: "weapon", style: "melee", level: 20, attack: 13, speed: 16 },
+  "hunter-bow": { name: "Hunter Bow", category: "weapon", slot: "weapon", style: "ranged", level: 20, attack: 11, speed: 24 },
+  "ember-staff": { name: "Ember Staff", category: "weapon", slot: "weapon", style: "magic", level: 20, attack: 15, speed: 13 },
+  "hide-vest": { name: "Reinforced Hide Vest", category: "armor", slot: "body", level: 20, defense: 10, hp: 28 },
 };
+
+export const EQUIPMENT_SLOTS = [
+  { id: "weapon", name: "Weapon" },
+  { id: "tool", name: "Tool" },
+  { id: "body", name: "Body" },
+  { id: "feet", name: "Feet" },
+];
+
+export const STORE_ITEMS = [
+  { itemId: "field-ration", price: 8, description: "Basic work food and a small combat heal." },
+  { itemId: "pet-tonic", price: 24, description: "Restores 45 health to one injured pet." },
+  { itemId: "keeper-tonic", price: 24, description: "Restores 45 Keeper health." },
+  { itemId: "copper-axe", price: 70, description: "Starter Woodcutting tool; 8% faster actions." },
+  { itemId: "copper-pickaxe", price: 70, description: "Starter Mining tool; 8% faster actions." },
+  { itemId: "reed-rod", price: 60, description: "Starter Fishing tool; 8% faster actions." },
+  { itemId: "forager-knife", price: 55, description: "Starter Foraging tool; 8% faster actions." },
+  { itemId: "wooden-sword", price: 50, description: "Starter Melee weapon." },
+  { itemId: "shortbow", price: 55, description: "Starter Ranged weapon." },
+  { itemId: "oak-wand", price: 60, description: "Starter Magic weapon." },
+  { itemId: "cloth-tunic", price: 45, description: "Basic body protection." },
+  { itemId: "leather-boots", price: 40, description: "Basic defence and speed." },
+];
 
 export const ACTIVITIES = [
   { id: "fallen-branches", skill: "woodcutting", name: "Cut Fallen Branches", level: 1, duration: 5, rewards: { "rough-log": 1 }, xp: 12 },
-  { id: "old-oak", skill: "woodcutting", name: "Fell Old Oak", level: 20, petLevel: 20, duration: 12, rewards: { hardwood: 1 }, xp: 30 },
-  { id: "silver-birch", skill: "woodcutting", name: "Harvest Silver Birch", level: 40, petLevel: 40, duration: 22, rewards: { hardwood: 2, "wild-fiber": 1 }, xp: 66 },
-  { id: "storm-pine", skill: "woodcutting", name: "Cut Storm Pine", level: 60, petLevel: 60, duration: 35, rewards: { hardwood: 3, "spark-core": 1 }, xp: 120 },
-  { id: "magic-tree", skill: "woodcutting", name: "Harvest Magic Tree", level: 80, petLevel: 80, duration: 55, rewards: { "arcane-wood": 1 }, xp: 210 },
+  { id: "old-oak", skill: "woodcutting", name: "Fell Old Oak", level: 20, duration: 12, rewards: { hardwood: 1 }, xp: 30 },
+  { id: "silver-birch", skill: "woodcutting", name: "Harvest Silver Birch", level: 40, duration: 22, rewards: { hardwood: 2, "wild-fiber": 1 }, xp: 66 },
+  { id: "storm-pine", skill: "woodcutting", name: "Cut Storm Pine", level: 60, duration: 35, rewards: { hardwood: 3, "spark-core": 1 }, xp: 120 },
+  { id: "magic-tree", skill: "woodcutting", name: "Harvest Magic Tree", level: 80, duration: 55, rewards: { "arcane-wood": 1 }, xp: 210 },
   { id: "copper-outcrop", skill: "mining", name: "Mine Copper Outcrop", level: 1, duration: 6, rewards: { copper: 1 }, xp: 13 },
-  { id: "iron-seam", skill: "mining", name: "Mine Iron Seam", level: 20, petLevel: 20, duration: 13, rewards: { iron: 1 }, xp: 32 },
-  { id: "silver-vein", skill: "mining", name: "Mine Silver Vein", level: 40, petLevel: 40, duration: 24, rewards: { silver: 1 }, xp: 70 },
-  { id: "quartz-fault", skill: "mining", name: "Break Quartz Fault", level: 60, petLevel: 60, duration: 38, rewards: { quartz: 1, silver: 1 }, xp: 126 },
-  { id: "starstone-core", skill: "mining", name: "Extract Starstone", level: 80, petLevel: 80, duration: 60, rewards: { starstone: 1 }, xp: 220 },
+  { id: "iron-seam", skill: "mining", name: "Mine Iron Seam", level: 20, duration: 13, rewards: { iron: 1 }, xp: 32 },
+  { id: "silver-vein", skill: "mining", name: "Mine Silver Vein", level: 40, duration: 24, rewards: { silver: 1 }, xp: 70 },
+  { id: "quartz-fault", skill: "mining", name: "Break Quartz Fault", level: 60, duration: 38, rewards: { quartz: 1, silver: 1 }, xp: 126 },
+  { id: "starstone-core", skill: "mining", name: "Extract Starstone", level: 80, duration: 60, rewards: { starstone: 1 }, xp: 220 },
   { id: "hedgerow", skill: "foraging", name: "Search Hedgerow", level: 1, duration: 5, rewards: { "wild-berries": 1, herb: 1 }, xp: 11 },
-  { id: "root-patch", skill: "foraging", name: "Dig Root Patch", level: 20, petLevel: 20, duration: 11, rewards: { root: 1, herb: 1 }, xp: 28 },
-  { id: "ember-grove", skill: "foraging", name: "Gather Embercaps", level: 40, petLevel: 40, duration: 20, rewards: { embercap: 1, herb: 1 }, xp: 62 },
-  { id: "storm-canopy", skill: "foraging", name: "Search Storm Canopy", level: 60, petLevel: 60, duration: 32, rewards: { "wild-berries": 2, "stolen-spice": 1 }, xp: 114 },
-  { id: "starbloom-field", skill: "foraging", name: "Pick Starbloom", level: 80, petLevel: 80, duration: 52, rewards: { starbloom: 1 }, xp: 202 },
+  { id: "root-patch", skill: "foraging", name: "Dig Root Patch", level: 20, duration: 11, rewards: { root: 1, herb: 1 }, xp: 28 },
+  { id: "ember-grove", skill: "foraging", name: "Gather Embercaps", level: 40, duration: 20, rewards: { embercap: 1, herb: 1 }, xp: 62 },
+  { id: "storm-canopy", skill: "foraging", name: "Search Storm Canopy", level: 60, duration: 32, rewards: { "wild-berries": 2, "stolen-spice": 1 }, xp: 114 },
+  { id: "starbloom-field", skill: "foraging", name: "Pick Starbloom", level: 80, duration: 52, rewards: { starbloom: 1 }, xp: 202 },
   { id: "shallow-stream", skill: "fishing", name: "Fish Shallow Stream", level: 1, duration: 7, rewards: { "raw-fish": 1 }, xp: 14 },
-  { id: "river-pool", skill: "fishing", name: "Fish River Pool", level: 20, petLevel: 20, duration: 14, rewards: { "raw-fish": 2 }, xp: 34 },
-  { id: "oasis-depths", skill: "fishing", name: "Fish Oasis Depths", level: 40, petLevel: 40, duration: 25, rewards: { "raw-fish": 2, "river-oil": 1 }, xp: 73 },
-  { id: "glacier-cut", skill: "fishing", name: "Fish Glacier Cut", level: 60, petLevel: 60, duration: 40, rewards: { "raw-fish": 3, "frost-core": 1 }, xp: 130 },
-  { id: "moonwater", skill: "fishing", name: "Fish Moonwater", level: 80, petLevel: 80, duration: 64, rewards: { "moon-fish": 1 }, xp: 228 },
+  { id: "river-pool", skill: "fishing", name: "Fish River Pool", level: 20, duration: 14, rewards: { "raw-fish": 2 }, xp: 34 },
+  { id: "oasis-depths", skill: "fishing", name: "Fish Oasis Depths", level: 40, duration: 25, rewards: { "raw-fish": 2, "river-oil": 1 }, xp: 73 },
+  { id: "glacier-cut", skill: "fishing", name: "Fish Glacier Cut", level: 60, duration: 40, rewards: { "raw-fish": 3, "frost-core": 1 }, xp: 130 },
+  { id: "moonwater", skill: "fishing", name: "Fish Moonwater", level: 80, duration: 64, rewards: { "moon-fish": 1 }, xp: 228 },
   { id: "unwatched-basket", skill: "mischief", name: "Raid Unwatched Basket", level: 1, duration: 6, rewards: { "wild-berries": 1 }, coins: 4, xp: 13 },
-  { id: "market-pantry", skill: "mischief", name: "Slip into Market Pantry", level: 20, petLevel: 20, duration: 14, rewards: { "stolen-spice": 1 }, coins: 12, xp: 35 },
-  { id: "caravan-pockets", skill: "mischief", name: "Work Caravan Pockets", level: 40, petLevel: 40, duration: 26, rewards: { "stolen-spice": 2 }, coins: 32, xp: 76 },
-  { id: "tower-ledgers", skill: "mischief", name: "Lift Tower Ledgers", level: 60, petLevel: 60, duration: 42, rewards: { "relic-dust": 1 }, coins: 70, xp: 136 },
-  { id: "royal-vault", skill: "mischief", name: "Crack Royal Vault", level: 80, petLevel: 80, duration: 68, rewards: { "relic-dust": 2, starstone: 1 }, coins: 180, xp: 240 },
+  { id: "market-pantry", skill: "mischief", name: "Slip into Market Pantry", level: 20, duration: 14, rewards: { "stolen-spice": 1 }, coins: 12, xp: 35 },
+  { id: "caravan-pockets", skill: "mischief", name: "Work Caravan Pockets", level: 40, duration: 26, rewards: { "stolen-spice": 2 }, coins: 32, xp: 76 },
+  { id: "tower-ledgers", skill: "mischief", name: "Lift Tower Ledgers", level: 60, duration: 42, rewards: { "relic-dust": 1 }, coins: 70, xp: 136 },
+  { id: "royal-vault", skill: "mischief", name: "Crack Royal Vault", level: 80, duration: 68, rewards: { "relic-dust": 2, starstone: 1 }, coins: 180, xp: 240 },
 ];
 
 export const ACTIVITY_BY_ID = Object.fromEntries(ACTIVITIES.map((entry) => [entry.id, entry]));
 
 export const RECIPES = [
   { id: "camp-skewer", skill: "cooking", name: "Camp Skewer", level: 1, duration: 6, ingredients: { "raw-meat": 1, herb: 1 }, output: { "camp-skewer": 3 }, xp: 15 },
-  { id: "river-stew", skill: "cooking", name: "River Stew", level: 15, petLevel: 15, duration: 12, ingredients: { "raw-fish": 2, root: 1, herb: 1 }, output: { "river-stew": 2 }, xp: 34 },
-  { id: "hunter-feast", skill: "cooking", name: "Hunter's Feast", level: 40, petLevel: 40, duration: 24, ingredients: { "raw-meat": 3, "wild-berries": 2, "stolen-spice": 1 }, output: { "hunter-feast": 2 }, xp: 82 },
-  { id: "moon-broth", skill: "cooking", name: "Moon Broth", level: 80, petLevel: 80, duration: 52, ingredients: { "moon-fish": 1, starbloom: 1, "relic-dust": 1 }, output: { "moon-broth": 2 }, xp: 230 },
+  { id: "river-stew", skill: "cooking", name: "River Stew", level: 15, duration: 12, ingredients: { "raw-fish": 2, root: 1, herb: 1 }, output: { "river-stew": 2 }, xp: 34 },
+  { id: "hunter-feast", skill: "cooking", name: "Hunter's Feast", level: 40, duration: 24, ingredients: { "raw-meat": 3, "wild-berries": 2, "stolen-spice": 1 }, output: { "hunter-feast": 2 }, xp: 82 },
+  { id: "moon-broth", skill: "cooking", name: "Moon Broth", level: 80, duration: 52, ingredients: { "moon-fish": 1, starbloom: 1, "relic-dust": 1 }, output: { "moon-broth": 2 }, xp: 230 },
   { id: "trail-pack", skill: "crafting", name: "Trail Pack", level: 1, duration: 8, ingredients: { "rough-log": 2, "wild-fiber": 2, hide: 1 }, output: { "trail-pack": 1 }, xp: 18 },
-  { id: "foundry-key", skill: "crafting", name: "Foundry Key", level: 35, petLevel: 35, duration: 22, ingredients: { iron: 4, hardwood: 2, bone: 1, "heartwood-core": 1 }, output: { "foundry-key": 1 }, xp: 68 },
-  { id: "storm-seal", skill: "crafting", name: "Storm Seal", level: 65, petLevel: 65, duration: 45, ingredients: { silver: 4, quartz: 2, "spark-core": 1, "mirage-eye": 1 }, output: { "storm-seal": 1 }, xp: 156 },
+  { id: "foundry-key", skill: "crafting", name: "Foundry Key", level: 35, duration: 22, ingredients: { iron: 4, hardwood: 2, bone: 1, "heartwood-core": 1 }, output: { "foundry-key": 1 }, xp: 68 },
+  { id: "storm-seal", skill: "crafting", name: "Storm Seal", level: 65, duration: 45, ingredients: { silver: 4, quartz: 2, "spark-core": 1, "mirage-eye": 1 }, output: { "storm-seal": 1 }, xp: 156 },
+  { id: "iron-sword", skill: "crafting", name: "Forge Iron Sword", level: 20, duration: 18, ingredients: { iron: 5, hardwood: 2, hide: 1 }, output: { "iron-sword": 1 }, xp: 48 },
+  { id: "hunter-bow", skill: "crafting", name: "Craft Hunter Bow", level: 20, duration: 18, ingredients: { hardwood: 5, "wild-fiber": 4, hide: 2 }, output: { "hunter-bow": 1 }, xp: 48 },
+  { id: "ember-staff", skill: "crafting", name: "Shape Ember Staff", level: 20, duration: 20, ingredients: { hardwood: 4, copper: 5, "ember-gland": 1 }, output: { "ember-staff": 1 }, xp: 52 },
+  { id: "hide-vest", skill: "crafting", name: "Sew Reinforced Hide Vest", level: 20, duration: 17, ingredients: { hide: 6, "wild-fiber": 5, copper: 2 }, output: { "hide-vest": 1 }, xp: 46 },
 ];
 
 export const RECIPE_BY_ID = Object.fromEntries(RECIPES.map((entry) => [entry.id, entry]));
 
 export const BUILDINGS = [
-  { id: "den", name: "Den Expansion", repeatable: true, maxLevel: 12, description: "+5 pet capacity per level.", costs: { "rough-log": 24, stone: 0, copper: 8 }, duration: 30 },
-  { id: "storage", name: "Storage Expansion", repeatable: true, maxLevel: 12, description: "+20 item stacks per level.", costs: { "rough-log": 18, copper: 10, "wild-fiber": 8 }, duration: 28 },
-  { id: "smokehouse", name: "Smokehouse", maxLevel: 1, description: "+10% Processing output.", costs: { hardwood: 18, iron: 12, stone: 0 }, duration: 70 },
-  { id: "kitchen", name: "Proper Kitchen", maxLevel: 1, description: "+8% Cooking bonus-output chance.", costs: { hardwood: 20, iron: 10, copper: 16 }, duration: 75 },
-  { id: "workshop", name: "Craft Workshop", maxLevel: 1, description: "+8% Crafting bonus-output chance.", costs: { hardwood: 24, iron: 18, quartz: 4 }, duration: 90 },
-  { id: "training-yard", name: "Training Yard", maxLevel: 1, description: "+5% pet experience from every activity.", costs: { hardwood: 28, iron: 16, hide: 12 }, duration: 95 },
-  { id: "watchtower", name: "Watchtower", maxLevel: 1, description: "+8% Mischief coins and bonus output.", costs: { hardwood: 30, silver: 10, "wild-fiber": 14 }, duration: 110 },
-  { id: "mess-hall", name: "Mess Hall", maxLevel: 1, description: "Meals provide 5% more working nutrition.", costs: { hardwood: 34, iron: 22, "stolen-spice": 8 }, duration: 120 },
-  { id: "prismatic-beacon", name: "Prismatic Beacon", maxLevel: 1, description: "+4 percentage points to every dungeon success chance.", costs: { "prism-heart": 1, starstone: 20, "relic-dust": 24 }, duration: 240 },
+  { id: "den", name: "Den Expansion", level: 1, repeatable: true, maxLevel: 12, description: "+5 pet capacity per level. Requirements rise every two expansions.", costs: { "rough-log": 24, stone: 0, copper: 8 }, duration: 30 },
+  { id: "storage", name: "Storage Expansion", level: 1, repeatable: true, maxLevel: 12, description: "+20 item stacks per level. Requirements rise every two expansions.", costs: { "rough-log": 18, copper: 10, "wild-fiber": 8 }, duration: 28 },
+  { id: "smokehouse", name: "Smokehouse", level: 3, maxLevel: 1, description: "+10% expected Processing output.", costs: { hardwood: 18, iron: 12, stone: 0 }, duration: 70 },
+  { id: "kitchen", name: "Proper Kitchen", level: 3, maxLevel: 1, description: "+8% Cooking bonus-output chance.", costs: { hardwood: 20, iron: 10, copper: 16 }, duration: 75 },
+  { id: "workshop", name: "Craft Workshop", level: 5, maxLevel: 1, description: "+8% Crafting bonus-output chance.", costs: { hardwood: 24, iron: 18, quartz: 4 }, duration: 90 },
+  { id: "training-yard", name: "Training Yard", level: 5, maxLevel: 1, description: "+5% pet experience from every activity.", costs: { hardwood: 28, iron: 16, hide: 12 }, duration: 95 },
+  { id: "watchtower", name: "Watchtower", level: 7, maxLevel: 1, description: "+8% Mischief coins and bonus output.", costs: { hardwood: 30, silver: 10, "wild-fiber": 14 }, duration: 110 },
+  { id: "mess-hall", name: "Mess Hall", level: 9, maxLevel: 1, description: "Meals provide 5% more working nutrition.", costs: { hardwood: 34, iron: 22, "stolen-spice": 8 }, duration: 120 },
+  { id: "prismatic-beacon", name: "Prismatic Beacon", level: 15, maxLevel: 1, description: "+4 percentage points to every dungeon success chance.", costs: { "prism-heart": 1, starstone: 20, "relic-dust": 24 }, duration: 240 },
 ];
 
 export const BUILDING_BY_ID = Object.fromEntries(BUILDINGS.map((entry) => [entry.id, entry]));
@@ -284,7 +329,7 @@ export function scaledPetStats(instance) {
   if (!species) return { hp: 1, attack: 1, defense: 1, speed: 1, power: 1 };
   const level = Math.max(1, Number(instance.level || 1));
   const stars = Math.max(1, Number(instance.stars || 1));
-  const growth = 1 + (level - 1) * 0.045 + (stars - 1) * 0.12;
+  const growth = (1 + (level - 1) * 0.045) * (1 + (stars - 1) * 0.1);
   const hp = Math.round(species.stats.hp * growth);
   const attack = Math.round(species.stats.attack * growth);
   const defense = Math.round(species.stats.defense * growth);
@@ -293,8 +338,23 @@ export function scaledPetStats(instance) {
 }
 
 export function aptitudeYield(aptitude, random = Math.random) {
-  const rating = Math.max(1, Math.min(5, Number(aptitude || 1)));
-  return random() < 0.25 ? rating : 1;
+  const rating = Math.max(1, Math.min(10, Number(aptitude || 1)));
+  return rating > 1 && random() < 0.25 ? rating : 1;
+}
+
+export function petAptitude(speciesOrId, skillId) {
+  const species = typeof speciesOrId === "string" ? SPECIES_BY_ID[speciesOrId] : speciesOrId;
+  return Math.max(1, Math.min(10, Number(species?.aptitudes?.[skillId] || 1)));
+}
+
+export function petActionDuration(task, speciesOrId, mealId = "") {
+  const aptitude = petAptitude(speciesOrId, task.skill);
+  const difficulty = Math.max(1, Number(task.level || 1));
+  const mismatch = Math.max(0, difficulty - aptitude * 10);
+  const aptitudeScale = 1 + (10 - aptitude) * 0.55;
+  const difficultyScale = 1 + mismatch / 70;
+  const mealScale = 1 - Number(ITEMS[mealId]?.workBonus || 0);
+  return Math.max(2000, Math.round(Number(task.duration || 5) * 1000 * aptitudeScale * difficultyScale * mealScale));
 }
 
 export function inventoryName(itemId) {

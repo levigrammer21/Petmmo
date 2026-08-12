@@ -5,7 +5,9 @@ import {
   claimDungeon,
   condensePets,
   createInitialState,
+  buyStoreItem,
   declineCapture,
+  equipItem,
   normalizeState,
   prepareMarketListing,
   publicProfile,
@@ -16,11 +18,17 @@ import {
   sacrificePet,
   settleState,
   startActivity,
+  startKeeperActivity,
+  startKeeperConstruction,
+  startKeeperProcessing,
+  startKeeperRecipe,
   startConstruction,
   startDungeon,
   startProcessing,
   startRecipe,
   stopActivity,
+  stopKeeperActivity,
+  useHealingItem,
 } from "./game-engine.js";
 
 const sdk = (module) => `https://www.gstatic.com/firebasejs/${firebaseSdkVersion}/${module}.js`;
@@ -38,10 +46,18 @@ function attachAccountProfile(rawState, user) {
 
 function actionResult(action, state, payload, at) {
   if (action === "startActivity") return { state: startActivity(state, payload, at) };
+  if (action === "startKeeperActivity") return { state: startKeeperActivity(state, payload, at) };
+  if (action === "startKeeperRecipe") return { state: startKeeperRecipe(state, payload, at) };
+  if (action === "startKeeperConstruction") return { state: startKeeperConstruction(state, payload, at) };
+  if (action === "startKeeperProcessing") return { state: startKeeperProcessing(state, payload, at) };
   if (action === "startRecipe") return { state: startRecipe(state, payload, at) };
   if (action === "startConstruction") return { state: startConstruction(state, payload, at) };
   if (action === "startProcessing") return { state: startProcessing(state, payload, at) };
   if (action === "stopActivity") return { state: stopActivity(state, payload.activityId, at) };
+  if (action === "stopKeeperActivity") return { state: stopKeeperActivity(state, at) };
+  if (action === "equipItem") return { state: equipItem(state, payload.itemId, at) };
+  if (action === "buyStoreItem") return { state: buyStoreItem(state, payload, at) };
+  if (action === "useHealingItem") return useHealingItem(state, payload, at);
   if (action === "resolveCombat") return resolveCombat(state, payload, Math.random, at);
   if (action === "attemptCapture") return attemptCapture(state, payload.mealId, Math.random, at);
   if (action === "declineCapture") return { state: declineCapture(state, at) };
