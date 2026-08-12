@@ -131,7 +131,7 @@ function queueRender() {
 function petVisual(species, extra = "") {
   const colors = affinityColors[species.affinity] || ["#777", "#ddd"];
   const style = `--affinity:${colors[0]};--affinity-soft:${colors[1]}`;
-  return `<div class="pet-visual ${extra}" style="${style}"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(species.name)}" /></div>`;
+  return `<div class="pet-visual ${extra}" style="${style}"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(species.name)}" loading="lazy" decoding="async" /></div>`;
 }
 
 function petIsInLiveBattle(petId) {
@@ -255,7 +255,7 @@ function liveAssignmentsBoard(title = "Live work queue") {
       const skill = SKILLS.find((entry) => entry.id === skillId);
       const completed = Number(assignment.completedActions || 0);
       return `<article class="live-job" data-live-assignment="${assignment.id}">
-        <img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="" />
+        <img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="" loading="lazy" decoding="async" />
         <div class="live-job-main">
           <div class="live-job-title"><div><strong>${escapeHtml(assignmentLabel(assignment))}</strong><span>${escapeHtml(pet?.customName || species.name)} · ${escapeHtml(skill?.name || "Pet Mastery")} Lv ${skillLevel(gameState, skillId)}</span></div><b data-assignment-time>${escapeHtml(timing.label)}</b></div>
           <div class="job-progress"><span data-assignment-progress style="width:${timing.progress}%"></span><i style="left:25%"></i><i style="left:50%"></i><i style="left:75%"></i></div>
@@ -345,7 +345,7 @@ function renderOverview() {
   panel.innerHTML = `${panelHeading("Keeper dashboard", `Welcome back, ${gameState.profile.displayName}`, "Every activity runs through your pets. Six may work at once; dungeon parties operate separately.")}
     <section class="feature-card card">
       <div class="feature-copy"><p class="eyebrow">Next useful move</p><h2>${gameState.pendingEncounter ? `Resolve the ${SPECIES_BY_ID[gameState.pendingEncounter.speciesId].name} encounter` : gameState.activities.length ? "Your den is already at work" : "Put your first pet to work"}</h2><p>${gameState.pendingEncounter ? "Use a cooked meal for a capture attempt, or send the defeated pet to Processing." : gameState.activities.length ? "Assignments keep earning until their selected meal runs out or storage fills." : "Gathering supplies the food, construction, and expedition loops that power the entire den."}</p><button class="button" data-panel-jump="${gameState.pendingEncounter ? "combat" : "activities"}" type="button">${gameState.pendingEncounter ? "Open encounter" : "Choose an activity"}</button></div>
-      ${species.art ? `<img src="${species.art}" alt="${escapeHtml(species.name)}" />` : ""}
+      ${species.art ? `<img src="${species.art}" alt="${escapeHtml(species.name)}" loading="lazy" decoding="async" />` : ""}
     </section>
     <div style="margin-top:1rem">${liveAssignmentsBoard("Den activity")}</div>
     <section class="grid four" style="margin-top:1rem">
@@ -445,7 +445,7 @@ function combatStageMarkup(playback) {
     const defeated = hp <= 0;
     return `<div class="fighter ${enemy ? "enemy" : ""} ${defeated ? "defeated" : ""}" id="fighter-${entry.id}" data-fighter-id="${entry.id}">
       <div class="fighter-card-head"><span>${enemy ? "Wild opponent" : "Party pet"}</span><b>${escapeHtml(species.affinity)}</b></div>
-      <div class="fighter-portrait"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(entry.name)}" /></div>
+      <div class="fighter-portrait"><img src="${escapeHtml(species.art || PLACEHOLDER_ART)}" alt="${escapeHtml(entry.name)}" decoding="async" /></div>
       <div class="fighter-name"><strong>${escapeHtml(entry.name)}</strong><span>Lv ${entry.level || 1} · ${escapeHtml(entry.ability || species.ability?.name || "Ability")}</span></div>
       <div class="bar-label"><span>Health</span><b data-hp-text="${entry.id}">${formatNumber(hp)} / ${formatNumber(entry.maxHp)}</b></div>
       <div class="health-bar"><span id="hp-${entry.id}" style="width:${Math.max(0, hp / entry.maxHp * 100)}%"></span></div>
@@ -639,7 +639,7 @@ function localSeedListings() {
 
 function renderCollection() {
   panel.innerHTML = `${panelHeading("Fifty launch species", "Pet Collection", `${gameState.discoveries.length} of ${PET_SPECIES.length} species discovered. All species can fight; aptitude and stat profiles determine their specialties.`)}
-    ${REGIONS.map((region) => `<section style="margin-bottom:1.4rem"><div class="section-heading compact-heading"><div><p class="eyebrow">${region.skillBand}</p><h2>${escapeHtml(region.name)}</h2></div><span class="tag">${PET_SPECIES.filter((pet) => pet.region === region.id).length} species</span></div><div class="collection-grid">${PET_SPECIES.filter((pet) => pet.region === region.id).map((species) => { const found = gameState.discoveries.includes(species.id); const art = species.art || PLACEHOLDER_ART; return `<article class="collection-card ${found ? "" : "undiscovered"}"><div class="collection-visual" style="--affinity-soft:${affinityColors[species.affinity]?.[1]}"><img src="${escapeHtml(art)}" alt="${found ? escapeHtml(species.name) : ""}"/></div><div class="collection-copy"><h3>${found ? escapeHtml(species.name) : "Undiscovered"}</h3><p>${found ? `${species.affinity} · ${species.acquisition}` : `${region.name} species`}</p></div></article>`; }).join("")}</div></section>`).join("")}`;
+    ${REGIONS.map((region) => `<section style="margin-bottom:1.4rem"><div class="section-heading compact-heading"><div><p class="eyebrow">${region.skillBand}</p><h2>${escapeHtml(region.name)}</h2></div><span class="tag">${PET_SPECIES.filter((pet) => pet.region === region.id).length} species</span></div><div class="collection-grid">${PET_SPECIES.filter((pet) => pet.region === region.id).map((species) => { const found = gameState.discoveries.includes(species.id); const art = species.art || PLACEHOLDER_ART; return `<article class="collection-card ${found ? "" : "undiscovered"}"><div class="collection-visual" style="--affinity-soft:${affinityColors[species.affinity]?.[1]}"><img src="${escapeHtml(art)}" alt="${found ? escapeHtml(species.name) : ""}" loading="lazy" decoding="async" /></div><div class="collection-copy"><h3>${found ? escapeHtml(species.name) : "Undiscovered"}</h3><p>${found ? `${species.affinity} · ${species.acquisition}` : `${region.name} species`}</p></div></article>`; }).join("")}</div></section>`).join("")}`;
 }
 
 function ownedMeals() {

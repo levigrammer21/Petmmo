@@ -1,6 +1,6 @@
 # Pet Idle MMO
 
-Version 0.4.0 is a complete pet-driven idle MMO for a small private group. It runs directly from GitHub Pages and uses Firebase's no-billing Spark plan for Email/Password and Google sign-in, private saves, the shared marketplace, and leaderboards.
+Version 0.5.0 is a complete pet-driven idle MMO for a small private group. It runs directly from GitHub Pages and uses Firebase's no-billing Spark plan for Email/Password and Google sign-in, private saves, the shared marketplace, and leaderboards.
 
 No Cloud Functions, Firebase Storage, server, or Blaze billing plan is required.
 
@@ -41,7 +41,7 @@ Every shippable file stays directly in the repository root. `pets/` is the only 
 - `GAME_DESIGN.md` — locked mechanics
 - `PET_ART_GUIDE.md` — production art standard
 
-The approved Ash Raccoon illustration is deliberately used for all 50 species until their individual art is created.
+All 50 launch species now have individual production artwork. Every asset uses its species ID as the filename, has a transparent background, and is optimized for mobile delivery.
 
 ## Private preview
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — Complete launch bestiary
+
+- Added unique production artwork for all 50 launch species across Greenhollow, Copperwood, Sunscar Basin, Stormreach, and Starfall Expanse.
+- Preserved the approved clean, almost-cute creature-collector style while giving every species its own silhouette, pose, palette, and elemental identity.
+- Converted the new art to transparent PNGs and optimized the files for mobile loading.
+- Replaced the global Ash Raccoon fallback with automatic species-ID art paths.
+- Added automated coverage checks so every roster entry must have a matching image file.
+
 ## 0.4.0 — Living idle timers and combat
 
 - Added a live work queue to Overview, Activities, Kitchen & Craft, Processing, and Construction.

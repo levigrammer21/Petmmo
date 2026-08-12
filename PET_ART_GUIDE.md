@@ -1,6 +1,6 @@
 # Pet art production guide
 
-The approved Ash Raccoon in `pets/ash-raccoon.png` is the visual benchmark.
+The approved Ash Raccoon in `pets/ash-raccoon.png` established the visual benchmark. The complete 50-species launch set is now implemented in `pets/`.
 
 Every remaining pet should use:
 
@@ -22,5 +22,4 @@ pets/stoneback-boar.png
 pets/brook-otter.png
 ```
 
-After adding an image, set that species' final `art` argument in `game-data.js` to the matching relative path.
-
+`game-data.js` derives each asset path from its species ID, so new species automatically resolve to `pets/<species-id>.png`.

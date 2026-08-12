@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import {
   attemptCapture,
   claimDungeon,
@@ -22,6 +22,12 @@ import {
 } from "./game-engine.js";
 import { ACTIVITIES, BUILDINGS, DUNGEONS, ITEMS, PET_SPECIES, RECIPES } from "./game-data.js";
 import { friendlyAuthError } from "./auth-errors.js";
+
+test("all 50 species have unique production art files", async () => {
+  assert.equal(PET_SPECIES.length, 50);
+  assert.equal(new Set(PET_SPECIES.map((species) => species.art)).size, 50);
+  await Promise.all(PET_SPECIES.map((species) => access(new URL(species.art, import.meta.url))));
+});
 
 test("initial save has the locked capacities and starter", () => {
   const state = createInitialState("Test Keeper");

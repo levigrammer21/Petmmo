@@ -1,5 +1,5 @@
 export const GAME_NAME = "Pet Idle MMO";
-export const GAME_VERSION = "0.4.0";
+export const GAME_VERSION = "0.5.0";
 export const MAX_ACTIVE_PETS = 6;
 export const MAX_COMBAT_PETS = 3;
 export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
@@ -50,7 +50,7 @@ export const SKILLS = [
   { id: "petMastery", name: "Pet Mastery", description: "General experience earned by managing working pets." },
 ];
 
-const pet = (id, name, region, affinity, acquisition, aptitudes, stats, ability, passive, captureRate, materials, art = "pets/ash-raccoon.png") => ({
+const pet = (id, name, region, affinity, acquisition, aptitudes, stats, ability, passive, captureRate, materials, art = `pets/${id}.png`) => ({
   id,
   name,
   region,
