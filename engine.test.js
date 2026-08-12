@@ -46,6 +46,7 @@ test("aptitude activity consumes food and settles rewards", () => {
   assert.equal(state.inventory.herb, 9);
   assert.equal(state.stats.actions, 1);
   assert.equal(state.activities.length, 1);
+  assert.equal(state.activities[0].completedActions, 1);
 });
 
 test("frequent sync ticks preserve partial idle-action progress", () => {
@@ -119,6 +120,23 @@ test("combat produces a capture-or-processing decision and failed capture create
   assert.equal(capture.capture.success, false);
   assert.equal(capture.state.pendingEncounter, null);
   assert.equal(capture.state.remains.length, 1);
+});
+
+test("combat emits a timed event stream for the live battle screen", () => {
+  const state = createInitialState("Live Fighter");
+  state.pets[0].level = 20;
+  const result = resolveCombat(state, {
+    petIds: [state.pets[0].id],
+    speciesId: "moss-hare",
+    mealId: "camp-skewer",
+  }, () => 0.2, 2_500_000);
+  const hits = result.battle.events.filter((event) => event.type === "hit");
+  assert.ok(result.battle.duration > 0);
+  assert.ok(hits.length > 0);
+  assert.ok(hits.every((event) => event.time > 0 && Number.isFinite(event.targetHp)));
+  assert.equal(result.battle.team[0].level, 20);
+  assert.equal(typeof result.battle.team[0].ability, "string");
+  assert.equal(typeof result.battle.enemy.attackInterval, "number");
 });
 
 test("rare hunts are level-gated and dungeon pets cannot be hunted directly", () => {
@@ -234,6 +252,19 @@ test("the Spark-plan client has no paid Cloud Functions dependency", async () =>
   assert.equal(deployPackage.scripts["deploy:backend"], "firebase deploy --only firestore:rules,firestore:indexes");
 });
 
+test("the UI exposes live work timers and non-animated combat feedback", async () => {
+  const source = await readFile(new URL("./app.js", import.meta.url), "utf8");
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(source, /COMBAT_MIN_PLAYBACK_MS = 14000/);
+  assert.match(source, /data-assignment-time/);
+  assert.match(source, /data-attack-meter/);
+  assert.match(source, /battle-log/);
+  assert.match(source, /damage-number/);
+  assert.doesNotMatch(source, /classList\.add\("attacking"\)/);
+  assert.doesNotMatch(styles, /@keyframes strike/);
+  assert.match(styles, /\.level-marker-row/);
+});
+
 test("Firestore rules keep saves private while enabling the family market", async () => {
   const rules = await readFile(new URL("./firestore.rules", import.meta.url), "utf8");
   assert.match(rules, /match \/players\/\{uid\}/);
@@ -249,7 +280,7 @@ test("authentication errors give players an actionable next step", () => {
   ]);
   assert.deepEqual(friendlyAuthError({ code: "permission-denied" }), [
     "Your account signed in, but the den cannot save yet.",
-    "Publish the Firestore rules included with version 0.3.0, then refresh the game.",
+    "Publish the Firestore rules included with the current release, then refresh the game.",
   ]);
   assert.deepEqual(friendlyAuthError({ name: "GameError", message: "Choose a cooked meal." }), ["Choose a cooked meal.", ""]);
 });

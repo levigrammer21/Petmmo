@@ -1,6 +1,6 @@
 # Pet Idle MMO
 
-Version 0.3.0 is a complete pet-driven idle MMO for a small private group. It runs directly from GitHub Pages and uses Firebase's no-billing Spark plan for Email/Password and Google sign-in, private saves, the shared marketplace, and leaderboards.
+Version 0.4.0 is a complete pet-driven idle MMO for a small private group. It runs directly from GitHub Pages and uses Firebase's no-billing Spark plan for Email/Password and Google sign-in, private saves, the shared marketplace, and leaderboards.
 
 No Cloud Functions, Firebase Storage, server, or Blaze billing plan is required.
 
@@ -16,7 +16,9 @@ No Cloud Functions, Firebase Storage, server, or Blaze billing plan is required.
 - All pets combat-capable
 - Woodcutting, Mining, Foraging, Fishing, Mischief, Processing, Cooking, Crafting, Construction, Combat, and Pet Mastery
 - Six simultaneous ordinary pet assignments
+- Live assignment countdowns, cycle progress, completed-action totals, and skill-level milestone bars
 - Three-pet continuous auto-combat
+- Full live combat playback with independent attack timers, health bars, hit splats, ability notices, and a rolling battle log
 - Rarity-tier hunt gates and dungeon-only species
 - Cooked-food capture attempts
 - Failed or declined capture Processing

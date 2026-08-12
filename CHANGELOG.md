@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 — Living idle timers and combat
+
+- Added a live work queue to Overview, Activities, Kitchen & Craft, Processing, and Construction.
+- Added smooth per-action countdowns, cycle progress bars, quarter markers, and completed-action totals without increasing Firestore write frequency.
+- Added skill XP bars with visible level 1/20/40/60/80/100 milestones and next-action unlock guidance.
+- Rebuilt Combat as a persistent battle screen rather than an instant result.
+- Added independent attack countdowns, manual attack meters, current/max health, hit splats, critical and ability labels, meal-heal splats, and a rolling battle log.
+- Lengthened visible combat to a minimum of 14 seconds and a maximum of 45 seconds while preserving the engine's speed relationships.
+- Removed pet attack movement animations; combat feedback comes from timers, health changes, hit flashes, and hit splats.
+- Prevented Firebase save listeners from replacing the combat screen before playback finishes.
+
 ## 0.3.0 — No-billing Firebase rebuild
 
 - Removed the Cloud Functions, Cloud Build, Artifact Registry, and Firebase Storage deployment requirements.

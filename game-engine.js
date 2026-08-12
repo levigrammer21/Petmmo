@@ -233,7 +233,7 @@ export function startActivity(rawState, { petId, activityId, mealId }, at = nowM
   const nutrition = consumeWorkingMeal(state, mealId);
   const id = randomId("work");
   const durationMs = actionDurationMs(task, mealId);
-  state.activities.push({ id, kind: "activity", taskId: activityId, petId, mealId, nutrition, startedAt: at, lastAt: at, durationMs, status: "running" });
+  state.activities.push({ id, kind: "activity", taskId: activityId, petId, mealId, nutrition, startedAt: at, lastAt: at, durationMs, completedActions: 0, status: "running" });
   pet.status = `activity:${id}`;
   addJournal(state, `${SPECIES_BY_ID[pet.speciesId].name} started ${task.name}.`, at);
   return state;
@@ -322,6 +322,7 @@ function completeRepeatedActivity(state, assignment, pet, task, actions, random,
     grantSkillXp(state, task.skill, task.xp);
     grantSkillXp(state, "petMastery", Math.max(2, Math.floor(task.xp * 0.24)));
     grantPetXp(state, pet, Math.max(5, Math.floor(task.xp * 0.78)));
+    assignment.completedActions = Number(assignment.completedActions || 0) + 1;
     state.stats.actions += 1;
   }
   events.push({ type: "activity", text: `${species.name} completed ${actions} ${task.name} action${actions === 1 ? "" : "s"}.` });
@@ -438,7 +439,7 @@ export function stopActivity(rawState, activityId, at = nowMs()) {
 function combatantFromPet(pet) {
   const species = SPECIES_BY_ID[pet.speciesId];
   const stats = scaledPetStats(pet);
-  return { id: pet.id, name: pet.customName || species.name, speciesId: pet.speciesId, affinity: species.affinity, ability: species.ability, maxHp: stats.hp, hp: stats.hp, attack: stats.attack, defense: stats.defense, speed: stats.speed, charge: 0, attacks: 0, alive: true };
+  return { id: pet.id, name: pet.customName || species.name, speciesId: pet.speciesId, affinity: species.affinity, ability: species.ability, maxHp: stats.hp, hp: stats.hp, attack: stats.attack, defense: stats.defense, speed: stats.speed, charge: 0, attacks: 0, alive: true, level: Number(pet.level || 1) };
 }
 
 function enemyCombatant(speciesId) {
@@ -541,7 +542,7 @@ export function resolveCombat(rawState, { petIds, speciesId, mealId }, random = 
     addJournal(state, `The party withdrew from ${enemySpecies.name}. No pets were lost.`, at);
   }
   events.push({ time: time + 80, type: "end", victory, enemyHp: enemy.hp, team: team.map((entry) => ({ id: entry.id, hp: entry.hp, maxHp: entry.maxHp })) });
-  return { state, battle: { victory, duration: time, events, enemy: { id: enemy.id, speciesId, name: enemy.name, affinity: enemy.affinity, maxHp: enemy.maxHp, attackInterval: attackInterval(enemy.speed) }, team: team.map((entry) => ({ id: entry.id, name: entry.name, speciesId: entry.speciesId, maxHp: entry.maxHp, attackInterval: attackInterval(entry.speed) })) } };
+  return { state, battle: { victory, duration: time, events, enemy: { id: enemy.id, speciesId, name: enemy.name, affinity: enemy.affinity, level: enemy.level, ability: enemy.ability.name, maxHp: enemy.maxHp, attackInterval: attackInterval(enemy.speed) }, team: team.map((entry) => ({ id: entry.id, name: entry.name, speciesId: entry.speciesId, level: entry.level, ability: entry.ability.name, maxHp: entry.maxHp, attackInterval: attackInterval(entry.speed) })) } };
 }
 
 function addRemains(state, speciesId, source = "combat") {

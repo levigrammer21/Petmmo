@@ -32,7 +32,7 @@ Do not include `https://` or `/Petmmo/`.
 
 An email/password account and a Google sign-in are different ways to enter. If an address was first used with Google, use **Continue with Google** unless you separately created an Email/Password account.
 
-## 3. Upload version 0.3.0 to GitHub
+## 3. Upload version 0.4.0 to GitHub
 
 Replace the old repository files with every file from this release. Keep all files at the repository root and keep only the artwork inside `pets/`.
 
@@ -40,7 +40,9 @@ Wait for GitHub Pages to finish publishing before testing.
 
 ## 4. Publish the free Firestore backend
 
-Open Firebase Cloud Shell. If your existing folder is still named `Petmmo-deploy-021`, paste this as one command:
+If you already completed the rules/index deployment successfully for version 0.3.0, **skip this step**. Version 0.4.0 changes the game screen and engine only; its Firestore rules and indexes are unchanged.
+
+For a new installation, open Firebase Cloud Shell. If your existing folder is still named `Petmmo-deploy-021`, paste this as one command:
 
 ```bash
 cd ~/Petmmo-deploy-021 && git pull && firebase use petmmo-158f7 && firebase deploy --only firestore:rules,firestore:indexes
@@ -61,7 +63,7 @@ You can also paste the complete contents of `firestore.rules` into **Cloud Fires
 ## 5. Test on your phone
 
 1. Open `https://levigrammer21.github.io/Petmmo/` in a normal Chrome tab.
-2. Refresh once so Chrome receives version 0.3.0.
+2. Refresh once so Chrome receives version 0.4.0.
 3. Use **Continue with Google** for the Google account you already tested.
 4. The game creates `players/{your Firebase UID}` automatically.
 5. Start a Foraging assignment, refresh, and confirm it returns.
@@ -81,7 +83,7 @@ The game uses Firestore transactions for normal saves and purchases. It is priva
 
 ## If an error appears
 
-- **Den cannot save yet / permission denied:** step 4 has not succeeded with the version 0.3.0 rules.
+- **Den cannot save yet / permission denied:** step 4 has not succeeded with the included rules.
 - **Email or password not recognized:** create an Email/Password account first, or use Google for a Google-created account.
 - **Unauthorized domain:** add `levigrammer21.github.io` in Authentication settings.
 - **Index is building / failed precondition:** wait a few minutes after step 4, then refresh.

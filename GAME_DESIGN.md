@@ -24,6 +24,8 @@ Each activity gives one guaranteed base output. A 25% burst roll changes that ou
 
 Player skill level and pet level both gate high-level actions. For example, the Magic Tree requires Woodcutting 80 and a level-80 pet, which requires at least 4★.
 
+Every running assignment exposes its current cycle countdown, progress bar, completed-action total, skill XP, and level milestones. These visual timers update locally and do not create extra Firestore writes.
+
 ## Food
 
 - Every ordinary active assignment consumes food.
@@ -37,6 +39,8 @@ Player skill level and pet level both gate high-level actions. For example, the 
 
 - Up to three pets fight at once, consuming normal active slots during a live fight.
 - Combat is continuous rather than turn-based. Every combatant attacks when its independent speed-based meter fills.
+- The battle screen remains visible for the entire fight, with attack countdowns, health bars, hit splats, ability notices, healing feedback, and a rolling combat log.
+- Pet artwork remains still during combat; timing and hit feedback provide the motion rather than attack animations.
 - Signature abilities fire on their own cooldowns.
 - Affinity advantage modifies damage by 20%; disadvantage reduces it.
 - Selected combat food automatically heals injured pets.
