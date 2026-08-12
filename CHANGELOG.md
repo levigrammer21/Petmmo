@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — No-billing Firebase rebuild
+
+- Removed the Cloud Functions, Cloud Build, Artifact Registry, and Firebase Storage deployment requirements.
+- Moved den initialization, idle settlement, gameplay actions, combat, captures, dungeons, and marketplace operations into browser-side Firestore transactions.
+- Added owner-only Firestore save writes and owner-published leaderboard rows.
+- Added a two-stage marketplace sale that prevents normal double purchases and safely delivers seller coins on their next live session.
+- Kept Google and Email/Password sign-in on the Spark plan.
+- Replaced backend deployment errors with mobile-friendly Firestore setup messages.
+- Added a one-command Cloud Shell deployment path for rules and indexes only.
+- Documented the trusted-family security tradeoff: accounts remain private, but gameplay is not cheat-proof without a paid authoritative server.
+
 ## 0.2.1 — Authentication repair
 
 - Corrected every Cloud Functions Firestore reference to use the Admin SDK's collection/document API, allowing new player saves and leaderboards to initialize after Google or email sign-in.

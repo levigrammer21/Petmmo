@@ -614,7 +614,7 @@ async function loadAuthenticatedUser(user, preferredName = "") {
   if (authLoadPromise) return authLoadPromise;
   authLoadPromise = (async () => {
     const result = await firebase.initializePlayer(preferredName || user.displayName || "Keeper");
-    if (!result?.state) throw Object.assign(new Error("internal"), { code: "functions/internal" });
+    if (!result?.state) throw Object.assign(new Error("Your den did not return a save."), { code: "game/empty-save" });
     loadedUserId = user.uid;
     enterGame("firebase", result.state);
     return result;

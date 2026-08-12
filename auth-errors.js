@@ -1,7 +1,12 @@
 export function friendlyAuthError(error) {
   const rawCode = String(error?.code || "").toLowerCase();
-  const rawMessage = String(error?.message || "");
-  const code = rawCode || (/auth\/invalid-(?:login-)?credential/i.test(rawMessage) ? "auth/invalid-credential" : /^internal$/i.test(rawMessage.trim()) ? "functions/internal" : "");
+  const rawMessage = String(error?.message || "").trim();
+
+  // Game rules intentionally throw plain-language errors. Preserve them so a
+  // player sees useful feedback such as missing food, a full den, or a level gate.
+  if (error?.name === "GameError") return [rawMessage || "That action could not be completed.", ""];
+
+  const code = rawCode || (/auth\/invalid-(?:login-)?credential/i.test(rawMessage) ? "auth/invalid-credential" : "");
   const known = {
     "auth/invalid-credential": ["Email or password not recognized.", "If this is your first visit, choose Create account. Google accounts should use Continue with Google."],
     "auth/invalid-login-credentials": ["Email or password not recognized.", "If this is your first visit, choose Create account. Google accounts should use Continue with Google."],
@@ -16,11 +21,17 @@ export function friendlyAuthError(error) {
     "auth/cancelled-popup-request": ["Google sign-in was cancelled.", "Only one sign-in window can be open at a time."],
     "auth/network-request-failed": ["Could not reach Firebase.", "Check your connection and try again."],
     "auth/internal-error": ["Google sign-in could not finish.", "Close the sign-in window, reopen the game, and try again."],
-    "functions/not-found": ["The game backend is not deployed yet.", "Deploy the Firebase backend from this release, then try again."],
-    "functions/internal": ["Your account signed in, but your den could not be loaded.", "Redeploy the Firebase backend from this release, then try again."],
-    internal: ["Your account signed in, but your den could not be loaded.", "Redeploy the Firebase backend from this release, then try again."],
+    "game/empty-save": ["Your account signed in, but the den did not load.", "Refresh the game and try once more."],
+    "permission-denied": ["Your account signed in, but the den cannot save yet.", "Publish the Firestore rules included with version 0.3.0, then refresh the game."],
+    "firestore/permission-denied": ["Your account signed in, but the den cannot save yet.", "Publish the Firestore rules included with version 0.3.0, then refresh the game."],
+    unavailable: ["Firebase is temporarily unreachable.", "Check your connection, then try again."],
+    "firestore/unavailable": ["Firebase is temporarily unreachable.", "Check your connection, then try again."],
+    "resource-exhausted": ["The free Firebase daily limit has been reached.", "The game will work again when Firebase resets the quota."],
+    aborted: ["That save changed at the same time on another device.", "Try the action once more."],
+    "failed-precondition": ["Firebase needs one more setup step.", "Publish the included Firestore indexes, wait a few minutes, then refresh."],
   };
+
   if (known[code]) return known[code];
-  if (/\binternal\b/i.test(rawMessage) && !rawCode.startsWith("auth/")) return known["functions/internal"];
+  if (rawCode.startsWith("auth/")) return ["Sign-in could not finish.", "Please try again. If it continues, refresh the game."];
   return ["Something went wrong.", "Please try again. If it continues, refresh the game."];
 }

@@ -10,34 +10,65 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // The browser may read its own complete game save, but it may never write
-    // XP, pets, inventory, currency, assignments, or dungeon results directly.
-    // Cloud Functions uses the Admin SDK and is not restricted by these rules.
+    // Each family member can read and update only their own complete game save.
+    // This keeps accounts private while allowing the game to run on Firebase's
+    // no-billing Spark plan without Cloud Functions.
     match /players/{uid} {
-      allow read: if owns(uid);
-      allow create, update, delete: if false;
+      allow read, create, update, delete: if owns(uid);
     }
 
-    // Signed-in players may inspect the shared family leaderboard.
+    // Everyone signed in may see the shared ranking, but a player may publish
+    // only the leaderboard row that matches their own Firebase account.
     match /leaderboards/{uid} {
       allow read: if signedIn();
-      allow create, update, delete: if false;
+      allow create, update: if owns(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.displayName is string
+        && request.resource.data.petPower is number;
+      allow delete: if owns(uid);
     }
 
-    // Listings are readable in the game, but every listing, purchase, return,
-    // fee, and ownership transfer must run inside a server transaction.
+    // Listings are shared. Sellers create/cancel their own listings; a buyer
+    // may only change an active listing to sold and attach their own UID.
     match /marketListings/{listingId} {
       allow read: if signedIn();
-      allow create, update, delete: if false;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'pet', 'price', 'fee', 'speciesId', 'createdAt',
+          'sellerUid', 'sellerName', 'status'
+        ])
+        && request.resource.data.sellerUid == request.auth.uid
+        && request.resource.data.sellerName is string
+        && request.resource.data.speciesId is string
+        && request.resource.data.pet is map
+        && request.resource.data.price is int
+        && request.resource.data.price >= 10
+        && request.resource.data.price <= 1000000000
+        && request.resource.data.fee is int
+        && request.resource.data.createdAt is int
+        && request.resource.data.status == 'active';
+
+      allow update: if signedIn()
+        && resource.data.status == 'active'
+        && resource.data.sellerUid != request.auth.uid
+        && request.resource.data.status == 'sold'
+        && request.resource.data.buyerUid == request.auth.uid
+        && request.resource.data.soldAt is int
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'buyerUid', 'soldAt']);
+
+      allow delete: if signedIn()
+        && resource.data.sellerUid == request.auth.uid;
     }
 
-    // Reserved for server-managed events, balance flags, and announcements.
+    // Reserved for future announcements that every signed-in family member
+    // may read. It remains write-locked.
     match /world/{document=**} {
       allow read: if signedIn();
-      allow create, update, delete: if false;
+      allow write: if false;
     }
 
-    // Anything not explicitly listed above is closed.
     match /{document=**} {
       allow read, write: if false;
     }

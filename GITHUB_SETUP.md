@@ -43,5 +43,4 @@ Replace the changed root files or artwork in `pets/`, commit, and GitHub Pages w
 
 ## Custom domain
 
-If you later add a custom domain to GitHub Pages, also add that hostname to Firebase Authentication's authorized domains and to the App Check provider.
-
+If you later add a custom domain to GitHub Pages, also add that hostname to Firebase Authentication's authorized domains.

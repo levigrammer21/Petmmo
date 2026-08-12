@@ -1,144 +1,90 @@
-# Firebase setup checklist
+# Firebase setup — no billing required
 
-Project already wired into the client: `petmmo-158f7`.
+The game is already connected to Firebase project `petmmo-158f7`.
 
-The browser configuration in `firebase-config.js` is intentionally public. Firebase web API keys identify the project; they do not authorize game-data changes. Authorization is enforced by Authentication, Firestore rules, callable Cloud Functions, and later App Check.
+This release uses only services available on Firebase's Spark plan:
 
-## 1. Choose the database
+- Firebase Authentication
+- Cloud Firestore
 
-Use **Cloud Firestore, Standard edition, Native mode**.
+Do **not** enable Blaze billing. Do **not** deploy Cloud Functions. Do **not** set up Firebase Storage. The Storage and Blaze errors from the older release can be ignored.
 
-Do not create Realtime Database for this game. Firestore fits player saves, marketplace listings, leaderboards, transactions, and real-time listeners better.
+## 1. Database
 
-When Firestore asks for a location:
+Use **Cloud Firestore → Standard edition → Native mode**. Your screenshot shows that Firestore already exists, so this step is done.
 
-- Recommended for a mostly central-US family group: **`nam5` (United States Central multi-region)**.
-- Lower-cost alternative: **`us-central1` (Iowa regional)**.
-- The included Cloud Functions run in `us-central1`.
+The current console rule `allow read, write: if false;` blocks the game from creating its den. It will be replaced by the included `firestore.rules` in step 4.
 
-Choose carefully: the default Firestore database location cannot be changed later.
+## 2. Sign-in methods
 
-Create the database in **Production mode**. The included rules will replace the temporary console rules during deployment.
+In **Firebase Console → Authentication → Sign-in method**, enable:
 
-## 2. Enable billing safeguards
+- Email/Password
+- Google
 
-Cloud Functions for Firebase requires the **Blaze pay-as-you-go plan**.
+Under **Authentication → Settings → Authorized domains**, make sure this exact hostname is present:
 
-For this small private game, normal usage should be modest, but billing is still usage-based:
-
-1. Upgrade the Firebase project to Blaze.
-2. In Google Cloud Billing, create a small monthly budget.
-3. Add alerts at 50%, 90%, and 100%.
-4. In Cloud Run quotas, set a conservative maximum-instance or spending safeguard if desired.
-
-The functions source already limits the game backend to eight instances.
-
-## 3. Enable sign-in
-
-Open **Firebase Console → Build → Authentication → Sign-in method**.
-
-Enable:
-
-- **Email/Password**
-- **Google**
-
-For Google, choose the project support email and save.
-
-Under **Authentication → Settings → Authorized domains**, add every domain that will run the game:
-
-- `localhost` for local testing
-- `YOUR-GITHUB-USERNAME.github.io`
-- Your custom domain later, if you use one
-
-Do not include `https://`, a path, or the repository name in the authorized-domain entry.
-
-## 4. Install the Firebase command-line tools
-
-Install Node.js 22, open a terminal in the unzipped game folder, and run:
-
-```bash
-npm install
-npx firebase login
-npx firebase use petmmo-158f7
+```text
+levigrammer21.github.io
 ```
 
-The included `.firebaserc` already points at `petmmo-158f7`; the `firebase use` command confirms that your account has access.
+Do not include `https://` or `/Petmmo/`.
 
-Never create or commit a service-account JSON key. Firebase CLI authentication is enough for deployment.
+An email/password account and a Google sign-in are different ways to enter. If an address was first used with Google, use **Continue with Google** unless you separately created an Email/Password account.
 
-## 5. Deploy the secure backend
+## 3. Upload version 0.3.0 to GitHub
 
-From the project root:
+Replace the old repository files with every file from this release. Keep all files at the repository root and keep only the artwork inside `pets/`.
+
+Wait for GitHub Pages to finish publishing before testing.
+
+## 4. Publish the free Firestore backend
+
+Open Firebase Cloud Shell. If your existing folder is still named `Petmmo-deploy-021`, paste this as one command:
 
 ```bash
-npm run deploy:backend
+cd ~/Petmmo-deploy-021 && git pull && firebase use petmmo-158f7 && firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-Run this command again whenever `functions.js`, the game engine, or Firebase rules change. Uploading files to GitHub Pages updates only the website; it does not update Cloud Functions.
+The successful ending should say that Firestore rules and indexes were deployed. It should **not** mention Functions, Storage, Cloud Build, or Blaze.
 
-That deploys:
+If the folder has a different name, enter that folder first, then run:
 
-- Node.js 22 callable Cloud Functions
-- Locked Firestore rules
-- Marketplace indexes
-- Closed Storage rules
+```bash
+git pull
+firebase use petmmo-158f7
+firebase deploy --only firestore:rules,firestore:indexes
+```
 
-The callable functions are:
+You can also paste the complete contents of `firestore.rules` into **Cloud Firestore → Rules** and tap **Publish**, but Cloud Shell is easier because it publishes the indexes too.
 
-- `initializePlayer`
-- `syncGame`
-- `gameAction`
-- `listPet`
-- `buyPet`
-- `cancelListing`
+## 5. Test on your phone
 
-All inventory, XP, currency, capture, Processing, Condensing, dungeon, construction, and marketplace mutations run through those functions.
+1. Open `https://levigrammer21.github.io/Petmmo/` in a normal Chrome tab.
+2. Refresh once so Chrome receives version 0.3.0.
+3. Use **Continue with Google** for the Google account you already tested.
+4. The game creates `players/{your Firebase UID}` automatically.
+5. Start a Foraging assignment, refresh, and confirm it returns.
 
-## 6. Understand the Firestore collections
+Then test an Email/Password account separately with **Create account**.
 
-| Collection | Purpose | Browser access |
-| --- | --- | --- |
-| `players/{uid}` | Complete authoritative player save | Owner read only; no client writes |
-| `marketListings/{id}` | Pets currently listed for sale | Signed-in read only |
-| `leaderboards/{uid}` | Small public profile and progression totals | Signed-in read only |
-| `world/**` | Reserved for server-managed events and announcements | Signed-in read only |
+## What the rules protect
 
-Cloud Functions use Firebase Admin transactions and bypass client rules. Everything else is denied by default.
+| Collection | Access |
+| --- | --- |
+| `players/{uid}` | Only that signed-in owner can read or write the complete save |
+| `leaderboards/{uid}` | Signed-in players can read; only the matching owner can publish their row |
+| `marketListings/{id}` | Signed-in players can read; sellers list/cancel and buyers mark one active listing sold |
+| `world/**` | Signed-in read only; writes remain closed |
 
-## 7. Add App Check after the first successful deployment
+The game uses Firestore transactions for normal saves and purchases. It is private between accounts, but browser-side gameplay is intentionally a trusted-family design rather than a cheat-proof public economy.
 
-Do this after sign-in and gameplay have been verified on the GitHub Pages URL:
+## If an error appears
 
-1. Open **Firebase Console → App Check**.
-2. Register the web app with **reCAPTCHA Enterprise**.
-3. Add the GitHub Pages domain to the provider.
-4. Copy the public site key into `appCheckSiteKey` in `firebase-config.js`.
-5. Upload the updated client and monitor App Check metrics.
-6. Once legitimate requests show valid tokens, change `enforceAppCheck: false` to `true` in `functions.js`.
-7. Redeploy functions with `npm run deploy:functions`.
-8. Enable enforcement for Cloud Functions and Firestore in the Firebase console.
+- **Den cannot save yet / permission denied:** step 4 has not succeeded with the version 0.3.0 rules.
+- **Email or password not recognized:** create an Email/Password account first, or use Google for a Google-created account.
+- **Unauthorized domain:** add `levigrammer21.github.io` in Authentication settings.
+- **Index is building / failed precondition:** wait a few minutes after step 4, then refresh.
+- **Daily limit reached:** Spark quotas reset automatically; this should be uncommon for a small family group.
 
-Do not enable enforcement before the site key is deployed and tested, or every game request will be rejected.
-
-## 8. Verify the deployment
-
-After the GitHub Pages site is online:
-
-1. Create one Email/Password account.
-2. Confirm the verification email arrives.
-3. Sign out and test Google sign-in.
-4. Start a Foraging assignment with the starter Ash Raccoon.
-5. Refresh the page and confirm progress returns.
-6. Win one combat and attempt a capture.
-7. Open Firestore and confirm a `players/{uid}` document exists.
-8. Confirm the browser cannot directly edit that player document through the SDK.
-
-## Included security rules
-
-The deployable rules are in:
-
-- `firestore.rules`
-- `storage.rules`
-- `firestore.indexes.json`
-
-Do not replace `firestore.rules` with a temporary `allow read, write: if true` rule. That would let anyone give themselves pets, XP, items, and coins.
+Never use a service-account key, and never publish a rule that allows everyone to read or write everything.

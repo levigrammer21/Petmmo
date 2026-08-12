@@ -78,6 +78,7 @@ Player skill level and pet level both gate high-level actions. For example, the 
 - Pets may be traded an unlimited number of times.
 - Every pet retains a unique instance ID and trade counter.
 - Sellers pay a 2% listing fee, minimum five coins.
-- Listing, buying, cancellation, currency transfer, and ownership transfer are atomic backend transactions.
+- Listing, buying, cancellation, currency transfer, and ownership transfer use Firestore transactions.
+- A sold listing delivers its coins as soon as the seller is online; an offline seller receives them on the next sign-in.
 - There are no account-bound or story-bound pets.
 - A keeper must retain one pet before listing another, preventing an accidentally unplayable empty den without binding any particular pet.

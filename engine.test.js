@@ -216,12 +216,30 @@ test("market transfers charge a listing fee and preserve unrestricted pet trade"
   assert.equal(nextSeller.profile.coins, 1_140);
 });
 
-test("Cloud Functions use valid Admin SDK document references", async () => {
-  const source = await readFile(new URL("./functions.js", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /\bdb\.doc\s*\(/, "Admin Firestore document references must be created through collection().doc()");
-  assert.match(source, /db\.collection\("players"\)\.doc\(/);
-  assert.match(source, /db\.collection\("leaderboards"\)\.doc\(/);
-  assert.match(source, /db\.collection\("marketListings"\)\.doc\(/);
+test("the Spark-plan client has no paid Cloud Functions dependency", async () => {
+  const source = await readFile(new URL("./firebase-client.js", import.meta.url), "utf8");
+  const firebaseJson = JSON.parse(await readFile(new URL("./firebase.json", import.meta.url), "utf8"));
+  let deployPackage;
+  try {
+    deployPackage = JSON.parse(await readFile(new URL("./firebase-package.json", import.meta.url), "utf8"));
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    deployPackage = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8"));
+  }
+  assert.doesNotMatch(source, /firebase-functions|httpsCallable|getFunctions/);
+  assert.match(source, /runTransaction/);
+  assert.equal(firebaseJson.functions, undefined);
+  assert.equal(firebaseJson.storage, undefined);
+  assert.equal(deployPackage.dependencies, undefined);
+  assert.equal(deployPackage.scripts["deploy:backend"], "firebase deploy --only firestore:rules,firestore:indexes");
+});
+
+test("Firestore rules keep saves private while enabling the family market", async () => {
+  const rules = await readFile(new URL("./firestore.rules", import.meta.url), "utf8");
+  assert.match(rules, /match \/players\/\{uid\}/);
+  assert.match(rules, /allow read, create, update, delete: if owns\(uid\)/);
+  assert.match(rules, /request\.resource\.data\.buyerUid == request\.auth\.uid/);
+  assert.match(rules, /affectedKeys\(\)[\s\S]*hasOnly\(\['status', 'buyerUid', 'soldAt'\]\)/);
 });
 
 test("authentication errors give players an actionable next step", () => {
@@ -229,8 +247,9 @@ test("authentication errors give players an actionable next step", () => {
     "Email or password not recognized.",
     "If this is your first visit, choose Create account. Google accounts should use Continue with Google.",
   ]);
-  assert.deepEqual(friendlyAuthError({ code: "functions/internal", message: "internal" }), [
-    "Your account signed in, but your den could not be loaded.",
-    "Redeploy the Firebase backend from this release, then try again.",
+  assert.deepEqual(friendlyAuthError({ code: "permission-denied" }), [
+    "Your account signed in, but the den cannot save yet.",
+    "Publish the Firestore rules included with version 0.3.0, then refresh the game.",
   ]);
+  assert.deepEqual(friendlyAuthError({ name: "GameError", message: "Choose a cooked meal." }), ["Choose a cooked meal.", ""]);
 });

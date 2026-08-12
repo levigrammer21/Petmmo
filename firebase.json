@@ -1,51 +1,11 @@
 {
-  "functions": {
-    "source": ".",
-    "codebase": "game",
-    "runtime": "nodejs22",
-    "ignore": [
-      ".git",
-      ".github",
-      ".openai",
-      ".sites-runtime",
-      ".wrangler",
-      "node_modules",
-      "app",
-      "build",
-      "db",
-      "dist",
-      "drizzle",
-      "examples",
-      "pets",
-      "public",
-      "scripts",
-      "tests",
-      "worker",
-      "*.zip",
-      "app.js",
-      "auth-errors.js",
-      "firebase-client.js",
-      "firebase-config.js",
-      "engine.test.js",
-      "index.html",
-      "styles.css",
-      "FIREBASE_SETUP.md",
-      "GITHUB_SETUP.md",
-      "README.md"
-    ]
-  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "storage": {
-    "rules": "storage.rules"
-  },
   "emulators": {
     "auth": { "port": 9099 },
-    "functions": { "port": 5001 },
     "firestore": { "port": 8080 },
-    "storage": { "port": 9199 },
     "ui": { "enabled": true, "port": 4000 },
     "singleProjectMode": true
   }

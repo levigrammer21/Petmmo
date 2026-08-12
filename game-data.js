@@ -1,5 +1,5 @@
 export const GAME_NAME = "Pet Idle MMO";
-export const GAME_VERSION = "0.2.1";
+export const GAME_VERSION = "0.3.0";
 export const MAX_ACTIVE_PETS = 6;
 export const MAX_COMBAT_PETS = 3;
 export const OFFLINE_CAP_MS = 8 * 60 * 60 * 1000;
