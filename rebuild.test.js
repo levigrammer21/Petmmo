@@ -58,3 +58,20 @@ test('combat stores a rolling live event feed and streak',()=>{
   for(let t=at+500;t<at+45000;t+=300)s=advanceLive(s,t);
   assert.ok(Array.isArray(s.combat.events)); assert.ok(s.combat.events.length>0); assert.ok((s.stats.bestStreak||0)>=0);
 });
+
+
+test('combat setup is not destroyed by the background timer and pet fallback is gone',async()=>{
+  const src=await (await import('node:fs/promises')).readFile(new URL('./app.js',import.meta.url),'utf8');
+  assert.doesNotMatch(src,/art-fallback[^\n]*🐾/);
+  assert.match(src,/stateUi\.captureItemId/);
+  assert.match(src,/stateUi\.combatStyle/);
+  assert.match(src,/stateUi\.screen!==['"]combat['"]/);
+});
+
+test('assignments and combat keep start timestamps for elapsed-time UI',()=>{
+  let s=createInitialState('Clock');const at=7_000_000;
+  s=startKeeperAssignment(s,'activity','fallen-branches',at);
+  assert.equal(s.keeperAssignment.startedAt,at);
+  s=startCombat(s,{petIds:[s.pets[0].id],includeKeeper:true},at+1000);
+  assert.equal(s.combat.startedAt,at+1000);
+});

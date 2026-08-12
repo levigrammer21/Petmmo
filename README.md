@@ -35,3 +35,10 @@ No Cloud Functions, Storage, or Blaze billing are required.
 ## 1.1 gameplay depth
 
 Taming is handled from Combat: turn on Auto-tame and choose a food offering. Victories roll a visible tame chance based on species rarity, offering quality, and Pet Mastery. Processing now exposes the complete remains queue and processors. Individual actions have Mastery levels from 1–99, and live combat uses affinity matchups, crits, pet abilities, combat styles, and streaks without adding search delays or session timers.
+
+
+## 1.2.0 deployment note
+
+This ZIP includes the two pet art files that were absent from the public `pets/` directory: `bramble-hedgehog.png` and `dawn-koi.png`. Keep the other existing pet PNGs in the repository. The UI no longer substitutes a paw icon when an art file fails.
+
+Idle assignments run until stopped. Offline catch-up is capped at 24 hours per return. The UI shows how long each current assignment and combat session has been running.

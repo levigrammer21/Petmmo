@@ -17,3 +17,17 @@
 @media(max-width:700px){.processing-columns,.combat-options,.taming-box,.combat-feed-grid{grid-template-columns:1fr}.processing-summary{grid-template-columns:repeat(3,1fr)}.toggle-row{flex-wrap:wrap;gap:10px}.battle-flash{min-height:auto}.hero-avatar{width:58px;height:58px}}
 .taming-guide{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;background:#102124;border:1px solid #345155;border-radius:18px;padding:18px;margin-bottom:14px}.taming-guide h2{margin:4px 0 7px;font-size:1.1rem}.taming-guide p:not(.eyebrow){margin:0;color:var(--muted);line-height:1.5;font-size:.78rem}.collection-progress{display:grid;grid-template-columns:1fr 1fr;gap:7px}.collection-progress>div{background:#0b191b;border:1px solid #294145;border-radius:10px;padding:9px;display:flex;justify-content:space-between;align-items:center}.collection-progress small{color:var(--muted)}.collection-progress b{color:#9ee4c4}
 @media(max-width:700px){.taming-guide{grid-template-columns:1fr}.collection-progress{grid-template-columns:1fr 1fr}}
+
+/* 1.2.0 interaction/performance pass */
+.action-progress span{width:100%;transform:scaleX(0);transform-origin:left center;will-change:transform}
+.running-time{display:block;margin-top:4px;color:#78928d!important;font-size:.66rem!important}
+.hpbar span{transition:width .28s linear}
+.art-fallback{display:none!important}
+.keeper-avatar{background:radial-gradient(circle at 52% 30%,#d8b26e 0,#3fae91 48%,#173c39 100%)}
+.keeper-avatar svg{filter:drop-shadow(0 3px 5px #0006)}
+.ka-bg{fill:#1b4d47}.ka-neck{fill:#bd805c}.ka-hair,.ka-hair-side{fill:#1b2826}.ka-brow,.ka-nose,.ka-mouth,.ka-scar{fill:none;stroke:#513a33;stroke-width:2;stroke-linecap:round}.ka-eye{fill:#162521}.ka-collar{fill:#183b38}.ka-clasp{fill:#d5aa55}.ka-leaf{fill:#77d8ad}
+.keeper-fighter{grid-template-columns:82px 1fr;min-height:96px;background:linear-gradient(135deg,#153832cc,#0b191bcc)}
+.keeper-fighter .keeper-avatar{width:74px;height:74px;border-radius:18px}
+.battle-stage .fighter-card{transition:border-color .2s,background .2s}
+@media(max-width:560px){.keeper-fighter{grid-template-columns:70px 1fr}.keeper-fighter .keeper-avatar{width:64px;height:64px}.fighters{grid-template-columns:1fr 1fr}.keeper-fighter{grid-column:1/-1}}
+.task-running{display:block;margin-top:10px;color:#78928d;font-size:.68rem}.task-running span{color:#9fc3b9}.processor-row small span{color:#9fc3b9}

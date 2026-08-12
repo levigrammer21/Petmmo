@@ -234,7 +234,7 @@ export function startCombat(state,{regionId='greenhollow',petIds=[],includeKeepe
   const s=clone(state); const region=REGIONS.find(r=>r.id===regionId)||REGIONS[0]; if(skillLevel(s,'combat')<region.level)throw Error(`Combat level ${region.level} required for ${region.name}.`); const ids=petIds.slice(0,MAX_COMBAT_PETS).filter(id=>s.pets.some(p=>p.id===id&&p.currentHp>0));
   if(!ids.length&&!includeKeeper)throw Error('Choose at least one living fighter.');
   for(const id of ids){delete s.petAssignments[id]; const p=s.pets.find(x=>x.id===id);if(p)p.status='combat';}
-  s.combat={regionId,petIds:ids,includeKeeper,style,autoEat,autoTame,captureItemId,state:'fighting',battle:0,streak:0,lastEvent:null,events:[],lastAdvancedAt:at}; spawnEnemy(s,null,at); return s;
+  s.combat={regionId,petIds:ids,includeKeeper,style,autoEat,autoTame,captureItemId,state:'fighting',battle:0,streak:0,lastEvent:null,events:[],startedAt:at,lastAdvancedAt:at}; spawnEnemy(s,null,at); return s;
 }
 export function stopCombat(state){const s=clone(state);if(s.combat){for(const id of s.combat.petIds){const p=s.pets.find(x=>x.id===id);if(p)p.status='idle';}}s.combat=null;return s;}
 export function resumeCombat(state,at=Date.now()){const s=clone(state);if(!s.combat)return s;if(!partyLiving(s,s.combat))return s;s.combat.state='fighting';if(!s.combat.enemy)spawnEnemy(s,null,at);return s;}

@@ -25,3 +25,13 @@
 - Kept gathering, Mischief, Cooking, Crafting, Processing, equipment, permanent den upgrades, regions, and pet taming while removing marketplace/condensing/session-management clutter from the core UI.
 - Added responsive desktop/sidebar and mobile/bottom-navigation interfaces designed around quick idle-game decisions.
 - Kept Firebase Authentication and private Firestore saves with local-device fallback.
+
+## 1.2.0 — Stable controls and smooth idle feedback
+
+- Stopped periodic full-page redraws from rebuilding combat setup controls while they are open.
+- Combat region/style/toggles/taming offering now persist while configuring the party.
+- Replaced redraw-driven action bars with requestAnimationFrame-driven smooth progress.
+- Added live elapsed time to Keeper work, pet work, and continuous combat.
+- Kept the 24-hour offline catch-up cap while allowing assignments themselves to continue indefinitely.
+- Reworked the Keeper combat portrait and enlarged it in the live battle layout.
+- Removed the paw image fallback. Pet art retries once with a versioned URL, then fails cleanly instead of showing fake art.
