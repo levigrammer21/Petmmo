@@ -19,3 +19,10 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
 
 ## Test
 `npm test` runs the data/economy/combat invariants. No build step is required for GitHub Pages.
+
+
+## 2.1.1
+- Moved adventurer identity controls to a dedicated Profile page.
+- Added Firebase-backed multi-metric leaderboards.
+- Cleaned Dawn Koi and Bramble Hedgehog backgrounds to transparency.
+- Farm is represented consistently as a skill.

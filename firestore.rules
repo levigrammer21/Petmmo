@@ -8,6 +8,18 @@ service cloud.firestore {
       allow read, create, update, delete: if owns(uid);
     }
 
+
+    match /v2Leaderboards/{uid} {
+      allow read: if signed();
+      allow create, update: if owns(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid','name','avatar','kills','gold','coinsEarned','pets','species','eggs','highestHit',
+          'actions','crafted','totalLevel','combatTotal','farmLevel','craftingLevel','updatedAt'
+        ]);
+      allow delete: if owns(uid);
+    }
+
     match /v2MarketListings/{id} {
       allow read: if signed();
       allow create: if signed()
