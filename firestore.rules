@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed(){ return request.auth != null; }
+    function owns(uid){ return signed() && request.auth.uid == uid; }
+
+    match /v2Players/{uid} {
+      allow read, create, update, delete: if owns(uid);
+    }
+
+    match /v2MarketListings/{id} {
+      allow read: if signed();
+      allow create: if signed()
+        && request.resource.data.sellerUid == request.auth.uid
+        && request.resource.data.status == 'active';
+      allow update: if signed() && (
+        resource.data.sellerUid == request.auth.uid
+        || (
+          resource.data.status == 'active'
+          && request.resource.data.status == 'sold'
+          && request.resource.data.buyerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','buyerUid','soldAt','credited'])
+        )
+      );
+      allow delete: if signed() && resource.data.sellerUid == request.auth.uid;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

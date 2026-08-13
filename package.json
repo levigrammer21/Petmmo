@@ -1,0 +1,8 @@
+{
+  "name": "wilderden",
+  "version": "2.0.1",
+  "type": "module",
+  "scripts": {
+    "test": "node --test game.test.js"
+  }
+}
