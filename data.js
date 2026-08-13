@@ -1,5 +1,5 @@
 // Wilderden v2.0.0 — clean rebuild data.
-export const GAME_VERSION = "2.1.1";
+export const GAME_VERSION = "2.1.2";
 export const GAME_NAME = "Wilderden";
 export const MAX_IDLE_MS = 12 * 60 * 60 * 1000;
 export const MAX_PET_WORKERS = 2;
