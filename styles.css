@@ -32,3 +32,11 @@
  .profile-hero{grid-template-columns:1fr;min-height:auto;text-align:center}.profile-art{height:245px}.profile-art img{max-height:235px}
  .leader-head{grid-template-columns:50px 1fr 90px}.leader-row{grid-template-columns:50px 42px 1fr 86px;padding:10px 8px;gap:7px}.leader-row img{width:40px;height:44px}.leader-row>strong{font-size:18px}
 }
+
+.requirements{margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:14px;background:#07131e99}
+.requirements-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-bottom:9px}
+.req-list{display:flex;flex-wrap:wrap;gap:8px}
+.req-chip{display:flex;gap:7px;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;border:1px solid var(--line);background:#0b1b29}
+.req-chip span{font-weight:900}.req-chip.enough{border-color:#44dda268;color:#8bf3c7;background:#0c352a80}.req-chip.short{border-color:#ff6d7560;color:#ff9b9f;background:#3d171c80}
+.pet-card{align-items:center}.pet-card .enemy-art{min-height:150px}.pet-card .enemy-art img{max-height:145px}.pet-card .enemy-info{width:100%}
+.error-card{border-color:#ff737388!important;background:#42171d99!important;color:#ffd9dc}.error-card p{color:#ffb9bd}
