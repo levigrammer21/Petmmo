@@ -40,3 +40,47 @@
 .req-chip span{font-weight:900}.req-chip.enough{border-color:#44dda268;color:#8bf3c7;background:#0c352a80}.req-chip.short{border-color:#ff6d7560;color:#ff9b9f;background:#3d171c80}
 .pet-card{align-items:center}.pet-card .enemy-art{min-height:150px}.pet-card .enemy-art img{max-height:145px}.pet-card .enemy-info{width:100%}
 .error-card{border-color:#ff737388!important;background:#42171d99!important;color:#ffd9dc}.error-card p{color:#ffb9bd}
+
+
+/* 2.1.4 — compact-density pass. Keeps primary actions finger-friendly while fitting much more on screen. */
+:root{--radius:17px}
+.layout{gap:13px;padding:13px}.grid{gap:10px}.section{margin-top:12px}.section-title{margin:4px 2px 8px}.section-title h2{font-size:20px;margin:4px 0}.eyebrow{font-size:9px;letter-spacing:1.35px}
+.card{padding:13px;border-radius:17px}.stat-card{padding:12px 14px}.stat-card strong{font-size:25px}.stat-card span{font-size:12px;margin-top:2px}
+.btn{min-height:38px;padding:7px 11px;border-radius:11px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.16)}.btn.sm{min-height:32px;padding:5px 8px;border-radius:9px;font-size:12px}.tab{min-height:34px;padding:6px 10px;font-size:12px}.pill{padding:6px 9px}
+.hero{padding:19px;min-height:125px;border-radius:21px}.hero h2{font-size:25px;margin:4px 0}.hero p{font-size:13px;line-height:1.4;margin:7px 0}.hero:after{width:230px;height:230px}
+.action-card{padding:12px}.action-card h3{font-size:16px;margin:3px 0}.action-top{gap:8px}.level-badge{font-size:10px;padding:4px 6px;border-radius:7px}.reward-line{font-size:12px;margin:6px 0;line-height:1.3}.action-foot{margin-top:8px;gap:7px}.timer{font-size:11px}.progress{height:7px}
+.skill-book{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.skill{padding:10px 11px;border-radius:14px}.skill strong{font-size:22px}.skill-icon{font-size:20px}.skill-name{font-size:12px}.skill .progress{margin-top:5px!important}.skill .muted{font-size:10px}
+.item-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.item{padding:9px;border-radius:13px}.item .qty{font-size:17px}.item small{font-size:11px}.item-actions{margin-top:6px;gap:4px}
+.enemy-grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}.enemy-card{padding:9px;border-radius:14px;grid-template-columns:58px 1fr;gap:8px}.enemy-card img{width:58px;height:58px}.enemy-card h3{font-size:15px}.chips{gap:3px}.chip{font-size:9px;padding:3px 5px}
+.pet-card{padding:9px;border-radius:14px;grid-template-columns:58px 1fr;gap:8px}.pet-card img{width:58px;height:58px}.pet-card .enemy-art{min-height:110px}.pet-card .enemy-art img{max-height:105px}.pet-card h3{font-size:15px;margin:2px 0}.pet-card p{font-size:11px;margin:4px 0}
+.requirements{margin:8px 0;padding:8px;border-radius:11px}.requirements-title{font-size:9px;margin-bottom:5px}.req-list{gap:5px}.req-chip{gap:5px;padding:4px 7px;font-size:10px}
+.field{padding:8px 9px;border-radius:10px;font-size:13px}.modal-card{padding:15px;border-radius:18px}
+.home-banner-clean{min-height:210px}.home-logo-center{width:min(350px,49%)}
+.combat-shell{grid-template-columns:minmax(0,1fr) 280px;gap:10px}.arena{min-height:500px;border-radius:20px}.fighters{inset:58px 12px 104px}.fighter-art{height:205px}.fighter-art img{max-height:198px}.fighter-name{font-size:19px}.hp-line{margin-top:6px}.hpbar{height:11px}.combat-bottom{left:12px;right:12px;bottom:12px;gap:5px}.combat-stat{padding:7px;border-radius:10px}.combat-stat strong{font-size:16px}.combat-stat small{font-size:9px}.combat-loadout{gap:5px;margin-top:8px}.combat-loadout span{padding:7px 8px;font-size:10px}.event{padding:7px 0;font-size:11px}.event-feed{max-height:370px}
+.profile-hero{min-height:250px}.profile-art{height:240px}.profile-art img{max-height:230px}.profile-copy h1{font-size:clamp(30px,5vw,52px)}
+.leader-row{padding:9px 11px;border-radius:12px;margin-bottom:5px}.leader-row>strong{font-size:20px}
+
+@media(max-width:900px){
+ #app{padding-bottom:66px}.topbar{height:58px;padding:6px 9px;gap:8px}.brandmark{width:38px;height:38px;border-radius:11px}.brand h1{font-size:15px}.brand small{font-size:10px}.menu-btn{width:38px;height:38px;border-radius:11px;font-size:17px}.top-stats{gap:5px}.pill{font-size:11px;padding:5px 7px}.layout{padding:8px}.mobile-nav{height:58px}.mobile-nav button{font-size:9px}.mobile-nav button b{font-size:17px;margin-bottom:0}
+ .grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}.grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid-2{gap:8px}.stat-card{padding:9px 10px}.stat-card strong{font-size:22px}.stat-card span{font-size:10px}
+ .home-banner-clean{min-height:180px}.home-logo-center{width:min(300px,48%)}
+ .skill-book{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.skill{padding:8px}.skill strong{font-size:19px}.skill-icon{font-size:17px}.skill-name{font-size:10px}
+ .combat-shell{grid-template-columns:1fr}.combat-side{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.arena{min-height:455px}.fighters{inset:52px 6px 94px}.fighter-art{height:170px}.fighter-art img{max-height:164px}.combat-bottom{grid-template-columns:repeat(4,1fr)}
+ .item-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.enemy-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:560px){
+ .topbar{height:56px;padding:6px 7px}.brandmark{width:36px;height:36px}.brand h1{font-size:14px}.top-stats .pill{font-size:10px;padding:5px 6px}.menu-btn{width:36px;height:36px}
+ .layout{padding:7px}.section{margin-top:9px}.card{padding:9px}.grid{gap:7px}.grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .hero{padding:13px;min-height:100px}.hero h2{font-size:21px}.hero p{font-size:11px;margin:5px 0}.section-title h2{font-size:18px}
+ .home-banner-clean{min-height:145px}.home-logo-center{width:52%}
+ .skill-book{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.skill{padding:7px;border-radius:11px}.skill strong{font-size:17px}.skill-icon{font-size:15px}.skill-name{font-size:9px}.skill .muted{font-size:8px}.skill .progress{height:5px}
+ .btn{min-height:36px;padding:6px 9px;font-size:12px}.btn.sm{min-height:30px;padding:4px 7px;font-size:10px}.tab{min-height:31px;padding:5px 8px;font-size:10px}
+ .action-card h3{font-size:14px}.reward-line{font-size:10px}.action-foot{display:grid;grid-template-columns:1fr auto}.timer{font-size:10px}
+ .item-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.item{padding:7px}.item .qty{font-size:15px}.item small{font-size:9px}.item-actions .btn{min-height:29px;padding:4px 6px;font-size:9px}
+ .enemy-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.enemy-card{grid-template-columns:44px 1fr;padding:7px;gap:6px}.enemy-card img{width:44px;height:44px}.enemy-card h3{font-size:13px}.enemy-card .muted{font-size:9px}
+ .pet-card{grid-template-columns:48px 1fr;padding:7px}.pet-card img{width:48px;height:48px}.pet-card .enemy-art{min-height:90px}.pet-card .enemy-art img{max-height:86px}
+ .requirements{padding:6px;margin:6px 0}.req-chip{font-size:9px;padding:3px 5px}
+ .combat-side{display:grid;grid-template-columns:1fr 1fr}.combat-side>.card{margin-bottom:0}.arena{min-height:430px}.fighters{grid-template-columns:1fr 24px 1fr;inset:46px 4px 88px}.fighter-art{height:145px}.fighter-art img{max-height:140px}.fighter-name{font-size:15px}.hpbar{height:9px}.combat-stat strong{font-size:14px}.combat-stat small{font-size:8px}.combat-loadout{grid-template-columns:repeat(4,1fr)}
+ .profile-hero{grid-template-columns:110px 1fr;text-align:left;min-height:160px}.profile-art{height:155px}.profile-art img{max-height:150px}.profile-copy h1{font-size:26px}
+ .leader-row{grid-template-columns:38px 32px 1fr 68px;padding:7px 5px}.leader-row img{width:30px;height:34px}.leader-rank{font-size:16px}.leader-row>strong{font-size:15px}
+}

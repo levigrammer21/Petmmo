@@ -21,16 +21,22 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
 `npm test` runs the data/economy/combat invariants. No build step is required for GitHub Pages.
 
 
-## 2.1.3
+## 2.1.4
 - Moved adventurer identity controls to a dedicated Profile page.
 - Added Firebase-backed multi-metric leaderboards.
 - Cleaned Dawn Koi and Bramble Hedgehog backgrounds to transparency.
 - Farm is represented consistently as a skill.
 
 
-## 2.1.3 fixes
+## 2.1.4 fixes
 - Fixed Pets page crash caused by the missing pet card renderer.
 - Crafting now shows **owned / needed** for every required ingredient, with green/red availability chips.
 - Leaderboard reads are public; publishing remains owner-only.
 - If Leaderboards still says permissions are missing, deploy this release's `firestore.rules` once:
   `firebase deploy --only firestore:rules`
+
+
+## 2.1.4
+- Compact-density UI pass: smaller cards, buttons, headers, stat boxes, skill tiles, item tiles, enemy/pet cards, and tighter combat information.
+- Mobile skill book now keeps a dense 3-column view where practical.
+- Primary actions preserve finger-friendly hit targets while secondary controls use less space.
