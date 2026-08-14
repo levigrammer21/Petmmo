@@ -21,14 +21,14 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
 `npm test` runs the data/economy/combat invariants. No build step is required for GitHub Pages.
 
 
-## 2.1.4
+## 2.1.5
 - Moved adventurer identity controls to a dedicated Profile page.
 - Added Firebase-backed multi-metric leaderboards.
 - Cleaned Dawn Koi and Bramble Hedgehog backgrounds to transparency.
 - Farm is represented consistently as a skill.
 
 
-## 2.1.4 fixes
+## 2.1.5 fixes
 - Fixed Pets page crash caused by the missing pet card renderer.
 - Crafting now shows **owned / needed** for every required ingredient, with green/red availability chips.
 - Leaderboard reads are public; publishing remains owner-only.
@@ -36,7 +36,15 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
   `firebase deploy --only firestore:rules`
 
 
-## 2.1.4
+## 2.1.5
 - Compact-density UI pass: smaller cards, buttons, headers, stat boxes, skill tiles, item tiles, enemy/pet cards, and tighter combat information.
 - Mobile skill book now keeps a dense 3-column view where practical.
 - Primary actions preserve finger-friendly hit targets while secondary controls use less space.
+
+
+## 2.1.5 — Real pet combat
+- Every one of the 50 species now has an intrinsic Melee, Ranged, or Magic combat style.
+- Every pet has a basic attack, independent live attack timer, hit chance, crit chance, and max hit.
+- Every pet has a named special attack that charges from its own attacks.
+- Up to two pets fight beside the adventurer at the same time; working/farm pets remain unavailable until recalled.
+- Combat UI shows each pet's style, basic attack, special, attack meter, and special charge.
