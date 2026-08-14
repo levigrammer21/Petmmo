@@ -1,4 +1,4 @@
-import {ACTIONS,COOKING,RECIPES,ACTION_BY_ID,ENEMY_BY_ID,ITEMS,MAX_IDLE_MS,MAX_PET_WORKERS,levelFromXp,xpForLevel} from './data.js?v=2.1.6';
+import {ACTIONS,COOKING,RECIPES,ACTION_BY_ID,ENEMY_BY_ID,ITEMS,MAX_IDLE_MS,MAX_PET_WORKERS,levelFromXp,xpForLevel} from './data.js?v=2.1.7';
 export const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 export const now=()=>Date.now();
 export const copy=o=>structuredClone(o);

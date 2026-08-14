@@ -21,14 +21,14 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
 `npm test` runs the data/economy/combat invariants. No build step is required for GitHub Pages.
 
 
-## 2.1.6
+## 2.1.7
 - Moved adventurer identity controls to a dedicated Profile page.
 - Added Firebase-backed multi-metric leaderboards.
 - Cleaned Dawn Koi and Bramble Hedgehog backgrounds to transparency.
 - Farm is represented consistently as a skill.
 
 
-## 2.1.6 fixes
+## 2.1.7 fixes
 - Fixed Pets page crash caused by the missing pet card renderer.
 - Crafting now shows **owned / needed** for every required ingredient, with green/red availability chips.
 - Leaderboard reads are public; publishing remains owner-only.
@@ -36,13 +36,13 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
   `firebase deploy --only firestore:rules`
 
 
-## 2.1.6
+## 2.1.7
 - Compact-density UI pass: smaller cards, buttons, headers, stat boxes, skill tiles, item tiles, enemy/pet cards, and tighter combat information.
 - Mobile skill book now keeps a dense 3-column view where practical.
 - Primary actions preserve finger-friendly hit targets while secondary controls use less space.
 
 
-## 2.1.6 — Real pet combat
+## 2.1.7 — Real pet combat
 - Every one of the 50 species now has an intrinsic Melee, Ranged, or Magic combat style.
 - Every pet has a basic attack, independent live attack timer, hit chance, crit chance, and max hit.
 - Every pet has a named special attack that charges from its own attacks.
@@ -50,10 +50,15 @@ This release reuses the existing Firebase project `petmmo-158f7`. It writes the 
 - Combat UI shows each pet's style, basic attack, special, attack meter, and special charge.
 
 
-## 2.1.6
+## 2.1.7
 - Home skill tiles deep-link to the correct training screen.
 - Replaced nonsensical Wood Ore / Mine Wood with Flint / Mine Flint primitive-tier progression.
 - Mobile bottom nav now uses Pets instead of Farm.
 - Combat companions are selected directly during combat setup; selecting a working pet automatically stops its job.
 - Live combat places pets beside the adventurer with independent attack/special meters under the player.
 - 12-hour idle caps are job-based, freeze progress, and clearly display MAX IDLE TIME REACHED.
+
+
+## 2.1.7
+- Fixed live combat composition so the adventurer is the large central fighter and pets flank at roughly half size.
+- Cleaned adventurer portrait assets to remove baked title plates/empty space that made the player appear tiny.
